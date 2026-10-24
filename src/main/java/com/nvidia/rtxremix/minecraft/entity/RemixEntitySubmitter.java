@@ -4,6 +4,11 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import net.minecraft.entity.Entity;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.client.world.ClientWorld;
+import net.minecraft.world.World;
+import com.nvidia.rtxremix.minecraft.compat.SpatialFrames;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasManager;
 import com.nvidia.rtxremix.minecraft.texture.LabPBRConverter;
@@ -55,7 +60,6 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -117,11 +121,11 @@ public class RemixEntitySubmitter {
      * glyph's ink, and glowing text stacks eight outline copies under the ink on a second
      * layer. A ray tracer resolves coplanar hits arbitrarily, so draw order becomes depth:
      * each quad steps ahead of the one before it along its normal, and each text layer
-     * steps past every quad the layer below could hold.
+     * steps past a standard sign's full outlined text layer.
      */
     private static final float TEXT_QUAD_STEP = 1f / 2048f;
     private static final float TEXT_LAYER_STEP =
-            TEXT_QUAD_STEP * (RemixCapturingConsumer.MAX_VERTICES / 4);
+            0.5f;
     private static final float POM_DISPLACE_IN = 0.25f;
     private static final float EMISSIVE_INTENSITY = 100.0f;
     private static final float COPPER_BEACON_LENS_EMISSION_SCALE = 100.0f;
@@ -784,7 +788,7 @@ public class RemixEntitySubmitter {
      * captured rigid-part transforms remain in their authoritative positions.
      */
     public void submitEntity(RemixEntityPass.EntityCaptureResult result, Vec3d renderOffset) {
-        Transform worldTransform = buildWorldTransform(result.worldPos().add(renderOffset));
+        Transform worldTransform = buildOwnerTransform(result, result.worldPos().add(renderOffset));
         submitEntity(result, worldTransform, baseCategoryFlags(result), NO_EXTRA_CATEGORIES);
     }
 
@@ -793,7 +797,7 @@ public class RemixEntitySubmitter {
      * from the capture itself; {@code policy} adds the owner's per-part categories.
      */
     void submitEntity(RemixEntityPass.EntityCaptureResult result, PartCategoryPolicy policy) {
-        Transform worldTransform = buildWorldTransform(result.worldPos());
+        Transform worldTransform = buildOwnerTransform(result, result.worldPos());
         submitEntity(result, worldTransform, baseCategoryFlags(result), policy);
     }
 
@@ -2735,7 +2739,21 @@ public class RemixEntitySubmitter {
         }
     }
 
+    private Transform buildOwnerTransform(RemixEntityPass.EntityCaptureResult result, Vec3d pos) {
+        World world = result.owner() instanceof BlockEntity be ? be.getWorld()
+                : result.owner() instanceof Entity entity ? entity.getWorld() : null;
+        var frame = world instanceof ClientWorld clientWorld
+                ? SpatialFrames.find(clientWorld,
+                        (int) Math.floor(pos.x) >> 4, (int) Math.floor(pos.z) >> 4) : null;
+        if (frame != null) {
+            frame.rtxremix$transform(pos.x, pos.y, pos.z, reusableWorldTransform);
+            return reusableWorldTransform;
+        }
+        return buildWorldTransform(pos);
+    }
+
     private Transform buildWorldTransform(Vec3d pos) {
+        reusableWorldTransform.setIdentity();
         reusableWorldTransform.setTranslation((float) pos.x, (float) pos.y, (float) pos.z);
         return reusableWorldTransform;
     }

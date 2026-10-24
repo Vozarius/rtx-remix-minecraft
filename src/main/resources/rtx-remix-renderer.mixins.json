@@ -80,9 +80,24 @@
         "WeightedBakedModelMixin",
         "WindowMixin",
         "WorldChunkMixin",
-        "WorldRendererMixin"
+        "WorldRendererMixin",
+        "SodiumMeshingTaskMixin",
+        "SodiumBlockRendererMixin",
+        "SodiumFluidRendererMixin",
+        "SodiumFallbackConsumerMixin",
+        "SodiumBuildOutputMixin",
+        "SodiumSectionManagerMixin",
+        "FlywheelBackendMixin",
+        "SableSpatialFrameMixin",
+        "SableRenderDispatcherMixin",
+        "SodiumWorldRendererMixin",
+        "EntityCullingVisibilityMixin",
+        "FrameGenRuntimeMixin",
+        "SodiumDynamicLightsMixin",
+        "SodiumSableLightSourceMixin"
     ],
     "injectors": {
         "defaultRequire": 1
-    }
+    },
+    "plugin": "com.nvidia.rtxremix.minecraft.compat.RendererMixinPlugin"
 }

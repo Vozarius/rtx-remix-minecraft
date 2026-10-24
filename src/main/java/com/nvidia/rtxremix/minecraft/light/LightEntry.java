@@ -14,9 +14,9 @@ public record LightEntry(
         int lightLevel,
         Block block,
         LightShape shape,
-        float x,
-        float y,
-        float z,
+        double x,
+        double y,
+        double z,
         float colorR,
         float colorG,
         float colorB,
@@ -52,7 +52,7 @@ public record LightEntry(
     private static final float DEFAULT_VOL_RADIANCE_SCALE = 0.5f;
 
     public static LightEntry sphere(BlockLightKey key, int lightLevel, Block block,
-                                    float x, float y, float z,
+                                    double x, double y, double z,
                                     float radius,
                                     ColorOverride color,
                                     Float intensity,
@@ -72,7 +72,7 @@ public record LightEntry(
      * cylinders are always omnidirectional.
      */
     public static LightEntry shapedSphere(BlockLightKey key, int lightLevel, Block block,
-                                          float x, float y, float z,
+                                          double x, double y, double z,
                                           float radius,
                                           ColorOverride color,
                                           Float intensity,
@@ -91,7 +91,7 @@ public record LightEntry(
     }
 
     public static LightEntry cylinder(BlockLightKey key, int lightLevel, Block block,
-                                      float x, float y, float z,
+                                      double x, double y, double z,
                                       float radius,
                                       float axisX, float axisY, float axisZ,
                                       float axisLength,
@@ -106,7 +106,7 @@ public record LightEntry(
     }
 
     public static LightEntry rect(BlockLightKey key, int lightLevel, Block block,
-                                  float x, float y, float z,
+                                  double x, double y, double z,
                                   float xAxisX, float xAxisY, float xAxisZ, float xSize,
                                   float yAxisX, float yAxisY, float yAxisZ, float ySize,
                                   float directionX, float directionY, float directionZ,
@@ -121,7 +121,7 @@ public record LightEntry(
     }
 
     public static LightEntry disk(BlockLightKey key, int lightLevel, Block block,
-                                  float x, float y, float z,
+                                  double x, double y, double z,
                                   float xAxisX, float xAxisY, float xAxisZ, float xRadius,
                                   float yAxisX, float yAxisY, float yAxisZ, float yRadius,
                                   float directionX, float directionY, float directionZ,
@@ -141,7 +141,7 @@ public record LightEntry(
 
     private static LightEntry base(BlockLightKey key, int lightLevel, Block block,
                                    LightShape shape,
-                                   float x, float y, float z,
+                                   double x, double y, double z,
                                    ColorOverride color,
                                    Float intensity,
                                    float radius,

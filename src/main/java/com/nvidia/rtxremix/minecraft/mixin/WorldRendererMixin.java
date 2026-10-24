@@ -4,6 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.nvidia.rtxremix.minecraft.compat.RendererPresence;
+import com.nvidia.rtxremix.minecraft.compat.sodium.SodiumTerrain;
 import com.nvidia.rtxremix.minecraft.weather.RemixWeatherRenderer;
 import com.nvidia.rtxremix.minecraft.terrain.visibility.BuiltChunkStorageSectionAccess;
 import com.nvidia.rtxremix.minecraft.terrain.visibility.BuiltChunkArrayIterator;
@@ -72,7 +74,6 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
@@ -256,6 +257,7 @@ public abstract class WorldRendererMixin
 
     @Override
     public LongSet rtxremix$builtSectionPositions() {
+        if (RendererPresence.hasSodium()) return SodiumTerrain.built();
         LongOpenHashSet built = new LongOpenHashSet();
         if (chunks == null) {
             return built;
@@ -275,6 +277,7 @@ public abstract class WorldRendererMixin
 
     @Override
     public LongSet rtxremix$queueSectionsForRemix(LongSet sections) {
+        if (RendererPresence.hasSodium()) return SodiumTerrain.recapture(sections);
         if (chunks == null || chunkBuilder == null || world == null || sections.isEmpty()) {
             return LongSets.emptySet();
         }
@@ -336,6 +339,11 @@ public abstract class WorldRendererMixin
 
     @Override
     public void rtxremix$scheduleResidentSectionRebuild(int cx, int sy, int cz) {
+        if (RendererPresence.hasSodium()) {
+            SodiumTerrain.rebuild(cx, sy, cz);
+            return;
+        }
+        if (chunks == null) return;
         ((BuiltChunkStorageSectionAccess) chunks).rtxremix$scheduleRebuildIfResident(cx, sy, cz);
     }
 

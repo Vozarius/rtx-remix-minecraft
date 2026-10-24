@@ -46,6 +46,59 @@ class DirectQuadWriterTest {
     };
 
     @Test
+    void preservesBiomeGradientAcrossFluidVertices() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        writer.beginSection();
+        int[] colors = {0xff001122, 0xff112233, 0xff223344, 0xff334455};
+        writer.writeFluidQuad(FRONT_POSITIONS, FRONT_UVS, 0, 0, 1, colors[0], null,
+                0,0,1,1,"translucent",null,colors);
+        SectionMeshData mesh = writer.buildMeshData();
+        try {
+            var vertices = mesh.surfaces().get(0).vertexBuffer();
+            for (int i = 0; i < 4; i++) assertEquals(colors[i], vertices.getInt(i*64+32));
+        } finally { mesh.release(); writer.releaseBuffers(); }
+    }
+
+    @Test
+    void preservesAllFacesOfComplexModdedBlock() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        writer.beginSection();
+        for (int i = 0; i < 513; i++) {
+            writer.stageQuad(FRONT_POSITIONS, FRONT_UVS, 0, 0, 1, -1, CUTOUT_SPRITE, 0, 0, 1, 1, "solid");
+        }
+        writer.flushBlock(null);
+        SectionMeshData mesh = writer.buildMeshData();
+        try { assertEquals(513 * 4, mesh.surfaces().get(0).vertexCount()); }
+        finally { mesh.release(); writer.releaseBuffers(); }
+    }
+
+    @Test
+    void growsBeyondSixFacesPerBlockInDenseSection() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        writer.beginSection();
+        for (int i = 0; i < 25000; i++) writeQuad(writer, i, -1);
+        SectionMeshData mesh = writer.buildMeshData();
+        try { assertEquals(100000, mesh.surfaces().get(0).vertexCount()); }
+        finally { mesh.release(); writer.releaseBuffers(); }
+    }
+
+    @Test
+    void preservesIndependentVertexColorsAndTheirContentHash() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        writer.beginSection();
+        writer.stageQuad(FRONT_POSITIONS, FRONT_UVS, 0, 0, 1, -1, CUTOUT_SPRITE, 0, 0, 1, 1, "solid");
+        int[] colors = {0xffff0000, 0xff00ff00, 0xff0000ff, 0x80ffffff};
+        writer.stageVertexColors(colors);
+        writer.flushBlock(null);
+        SectionMeshData mesh = writer.buildMeshData();
+        try {
+            ByteBuffer vertices = mesh.surfaces().get(0).vertexBuffer();
+            for (int i = 0; i < 4; i++) assertEquals(colors[i], vertices.getInt(i * 64 + 32));
+            assertEquals(new SectionMeshData(mesh.surfaces()).contentHash(), mesh.contentHash());
+        } finally { mesh.release(); writer.releaseBuffers(); }
+    }
+
+    @Test
     void precomputedHashMatchesSectionMeshDataHash() {
         DirectQuadWriter writer = new DirectQuadWriter();
         writer.beginSection();

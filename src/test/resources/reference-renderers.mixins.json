@@ -1,0 +1,26 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.nvidia.rtxremix.minecraft.mixin",
+    "compatibilityLevel": "JAVA_21",
+    "mixins": [
+        "SodiumMeshingTaskMixin",
+        "SodiumBlockRendererMixin",
+        "SodiumFluidRendererMixin",
+        "SodiumFallbackConsumerMixin",
+        "SodiumBuildOutputMixin",
+        "SodiumSectionManagerMixin",
+        "SodiumWorldRendererMixin",
+        "FlywheelBackendMixin",
+        "SableSpatialFrameMixin",
+        "SableRenderDispatcherMixin",
+        "EntityCullingVisibilityMixin",
+        "FrameGenRuntimeMixin",
+        "SodiumDynamicLightsMixin",
+        "SodiumSableLightSourceMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    },
+    "plugin": "com.nvidia.rtxremix.minecraft.compat.RendererMixinPlugin"
+}

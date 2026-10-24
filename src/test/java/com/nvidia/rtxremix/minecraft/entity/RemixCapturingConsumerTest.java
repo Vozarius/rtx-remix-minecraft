@@ -44,6 +44,47 @@ class RemixCapturingConsumerTest {
     }
 
     @Test
+    void capturesLargeContraptionWithoutDroppingVerticesAndPagesItsRigidRun() {
+        RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
+        int count = RemixCapturingConsumer.MAX_PART_VERTICES * 2 + 12;
+        for (int i = 0; i < count; i++) {
+            consumer.acceptModelSpaceVertex(i, 2, 3, 0xff123456, .25f, .5f, 0, 0, 1, 0, 0, 0);
+        }
+        consumer.finishOpenVertex();
+        assertEquals(count, consumer.getVertexCount());
+        assertEquals(count - 1, consumer.getPx()[count - 1]);
+        assertEquals(3, consumer.getPartCount());
+        int total = 0;
+        for (int i = 0; i < consumer.getPartCount(); i++) {
+            assertTrue(consumer.getPartVertexCount(i) <= RemixCapturingConsumer.MAX_PART_VERTICES);
+            total += consumer.getPartVertexCount(i);
+        }
+        assertEquals(count, total);
+        float[] retained = consumer.getPx();
+        consumer.clear();
+        for (int i = 0; i < count; i++) consumer.vertex(i, 2, 3);
+        consumer.finishOpenVertex();
+        assertEquals(count, consumer.getVertexCount());
+        assertSame(retained, consumer.getPx(), "repeated frames reuse grown capture buffers");
+    }
+
+    @Test
+    void retainsEveryMovingPartOfComplexMachine() {
+        RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
+        for (int part = 0; part < 1300; part++) {
+            for (int vertex = 0; vertex < 4; vertex++) {
+                consumer.acceptModelSpaceVertex(vertex, part, 0, -1, 0, 0, 0, 1, 0, 0, 0, part);
+            }
+        }
+        consumer.finishOpenVertex();
+        assertEquals(1300, consumer.getPartCount());
+        assertEquals(5200, consumer.getVertexCount());
+        assertEquals(1299, consumer.getPartBone(1299));
+        consumer.clear();
+        assertEquals(0, consumer.getPartCount());
+    }
+
+    @Test
     void matrixVertexRetainsLocalPositionAndCapturesPoseDuringRemixPass() {
         EntityRenderContext context = EntityRenderContext.get();
         context.begin(true);

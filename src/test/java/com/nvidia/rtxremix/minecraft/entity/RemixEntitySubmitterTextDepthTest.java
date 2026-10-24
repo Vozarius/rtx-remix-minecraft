@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RemixEntitySubmitterTextDepthTest {
 
-    private static final int MAX_QUADS_PER_LAYER = RemixCapturingConsumer.MAX_VERTICES / 4;
+    private static final int MAX_QUADS_PER_LAYER = 1024;
 
     @Test
     void laterQuadsOfATextLayerSitInFront() {

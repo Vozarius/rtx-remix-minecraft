@@ -4,6 +4,9 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
+import com.nvidia.rtxremix.minecraft.compat.SpatialFrames;
+import com.nvidia.rtxremix.minecraft.compat.QuadColors;
+import com.nvidia.rtxremix.minecraft.compat.SpatialFrame;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
@@ -37,7 +40,6 @@ import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockRenderView;
 import net.minecraft.world.BlockView;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -104,6 +106,7 @@ public final class BlockQuadEmitter {
 
     private final float[] tempPositions = new float[12];
     private final float[] tempUvs = new float[8];
+    private final int[] tempColors = new int[4];
     private final int[] tintCache = new int[TINT_CACHE_SIZE];
     private final int[] waterColorCache = new int[WATER_COLOR_CACHE_SIZE];
     private final byte[] waterTopCellCache = new byte[WATER_TOP_CACHE_CELL_COUNT];
@@ -145,6 +148,7 @@ public final class BlockQuadEmitter {
      * it starts.
      */
     private boolean active;
+    private SpatialFrame frame;
     private BlockTextureManager texManager;
     private BlockRenderManager blockRenderManager;
     private BlockColors blockColors;
@@ -206,6 +210,8 @@ public final class BlockQuadEmitter {
         this.baseZ = sectionPos.getMinZ();
 
         MinecraftClient client = MinecraftClient.getInstance();
+        this.frame = SpatialFrames.find(
+                client == null ? null : client.world, sectionPos.getX(), sectionPos.getZ());
         this.blockColors = (client != null) ? client.getBlockColors() : null;
 
         writer.beginSection(baseX, baseY, baseZ);
@@ -220,6 +226,32 @@ public final class BlockQuadEmitter {
         waterColorKnownMask = 0;
         blockCount = 0;
         fluidCount = 0;
+    }
+
+    /** Captures a renderer's finished quad without evaluating its model again. */
+    public void stageRenderedQuad(float[] positions, float[] uvs, int[] colors,
+                                  float nx, float ny, float nz, Sprite sprite, String layer) {
+        Identifier id = sprite == null ? null : sprite.getContents().getId();
+        if (isWaterSprite(id)) {
+            System.arraycopy(positions, 0, tempPositions, 0, 12);
+            emitBlockWaterQuad(nx, ny, nz, colors[0], layer, colors);
+            return;
+        }
+        writer.stageQuad(positions, uvs, nx, ny, nz, colors[0], id,
+                sprite == null ? 0 : sprite.getMinU(), sprite == null ? 0 : sprite.getMinV(),
+                sprite == null ? 1 : sprite.getMaxU(), sprite == null ? 1 : sprite.getMaxV(), layer);
+        writer.stageVertexColors(colors);
+    }
+
+    public void flushRenderedBlock() {
+        writer.flushBlock(texManager);
+    }
+
+    /** Releases an interrupted build without publishing partial geometry. */
+    public void abortSection() {
+        active = false;
+        writer.releaseBuffers();
+        lights.clear();
     }
 
     public boolean isActive() { return active; }
@@ -378,13 +410,14 @@ public final class BlockQuadEmitter {
      * all accumulated mesh/light/mask data. Deactivates the emitter.
      */
     public SectionBlockData finishSection(ChunkSectionPos sectionPos) {
+        writer.flushBlock(texManager);
         try (ProfileScope finishScope = ProfileScope.begin("finishSection")) {
             finishScope.blockCount(blockCount).fluidCount(fluidCount);
             SectionMeshData meshData = writer.buildMeshData();
             SectionBlockData result = new SectionBlockData(
                     sectionPos, meshData, List.copyOf(lights), topMask, bottomMask,
                     eastMask, westMask, southMask, northMask,
-                    Arrays.copyOf(opacity, opacity.length));
+                    Arrays.copyOf(opacity, opacity.length), frame);
             lights.clear();
             return result;
         } finally {
@@ -460,6 +493,10 @@ public final class BlockQuadEmitter {
 
         writer.stageQuad(tempPositions, tempUvs, nx, ny, nz, color,
                 spriteId, su0, sv0, su1, sv1, layerName);
+        for (int vertex = 0; vertex < 4; vertex++) {
+            tempColors[vertex] = QuadColors.tintAbgr(vd[vertex * 8 + 3], color);
+        }
+        writer.stageVertexColors(tempColors);
     }
 
     private static final Identifier WATER_STILL_SPRITE = Identifier.ofVanilla("block/water_still");
@@ -478,12 +515,16 @@ public final class BlockQuadEmitter {
      * its top and side faces.
      */
     private void emitBlockWaterQuad(float nx, float ny, float nz, int color, String layerName) {
+        emitBlockWaterQuad(nx, ny, nz, color, layerName, null);
+    }
+
+    private void emitBlockWaterQuad(float nx, float ny, float nz, int color, String layerName, int[] vertexColors) {
         float tileSize = BlockTextureManager.getWaterTileSize();
         float ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
         for (int v = 0; v < 4; v++) {
-            float wx = baseX + tempPositions[v * 3];
-            float wy = baseY + tempPositions[v * 3 + 1];
-            float wz = baseZ + tempPositions[v * 3 + 2];
+            float wx = TiledTextureCoordinates.tile(baseX, tempPositions[v * 3], tileSize);
+            float wy = TiledTextureCoordinates.tile(baseY, tempPositions[v * 3 + 1], tileSize);
+            float wz = TiledTextureCoordinates.tile(baseZ, tempPositions[v * 3 + 2], tileSize);
             float u, w;
             if (ay >= ax && ay >= az) {
                 u = wx; w = wz;
@@ -492,11 +533,11 @@ public final class BlockQuadEmitter {
             } else {
                 u = wx; w = wy;
             }
-            tempUvs[v * 2] = u / tileSize;
-            tempUvs[v * 2 + 1] = w / tileSize;
+            tempUvs[v * 2] = u;
+            tempUvs[v * 2 + 1] = w;
         }
         writer.writeFluidQuad(tempPositions, tempUvs, nx, ny, nz, color,
-                null, 0, 0, 1, 1, layerName, texManager);
+                null, 0, 0, 1, 1, layerName, texManager, vertexColors);
     }
 
     // --- Fluid geometry ---
@@ -562,8 +603,8 @@ public final class BlockQuadEmitter {
             setPos4(tempPositions, lx, ly + h00, lz, lx + 1, ly + h10, lz,
                     lx + 1, ly + h11, lz + 1, lx, ly + h01, lz + 1);
             if (isWater) {
-                float u0 = wx / tileSize, v0 = wz / tileSize;
-                float u1 = (wx + 1) / tileSize, v1 = (wz + 1) / tileSize;
+                float u0 = TiledTextureCoordinates.tile(baseX, lx, tileSize), v0 = TiledTextureCoordinates.tile(baseZ, lz, tileSize);
+                float u1 = TiledTextureCoordinates.tile(baseX, lx + 1, tileSize), v1 = TiledTextureCoordinates.tile(baseZ, lz + 1, tileSize);
                 setUv4(tempUvs, u0, v0, u1, v0, u1, v1, u0, v1);
                 writer.writeFluidQuad(tempPositions, tempUvs, 0, 1, 0, color,
                         null, 0, 0, 1, 1, layer, texManager);
@@ -616,8 +657,8 @@ public final class BlockQuadEmitter {
             setPos4(tempPositions, lx, ly, lz + 1, lx + 1, ly, lz + 1,
                     lx + 1, ly, lz, lx, ly, lz);
             if (isWater) {
-                float u0 = wx / tileSize, v0 = wz / tileSize;
-                float u1 = (wx + 1) / tileSize, v1 = (wz + 1) / tileSize;
+                float u0 = TiledTextureCoordinates.tile(baseX, lx, tileSize), v0 = TiledTextureCoordinates.tile(baseZ, lz, tileSize);
+                float u1 = TiledTextureCoordinates.tile(baseX, lx + 1, tileSize), v1 = TiledTextureCoordinates.tile(baseZ, lz + 1, tileSize);
                 setUv4(tempUvs, u0, v1, u1, v1, u1, v0, u0, v0);
                 writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
                         null, 0, 0, 1, 1, layer, texManager);
@@ -672,11 +713,11 @@ public final class BlockQuadEmitter {
                 boolean xAxis = (dir == Direction.EAST || dir == Direction.WEST);
                 float sU0, sU1, sV0, sV1;
                 if (xAxis) {
-                    sU0 = wz / tileSize; sU1 = (wz + 1) / tileSize;
+                    sU0 = TiledTextureCoordinates.tile(baseZ, lz, tileSize); sU1 = TiledTextureCoordinates.tile(baseZ, lz + 1, tileSize);
                 } else {
-                    sU0 = wx / tileSize; sU1 = (wx + 1) / tileSize;
+                    sU0 = TiledTextureCoordinates.tile(baseX, lx, tileSize); sU1 = TiledTextureCoordinates.tile(baseX, lx + 1, tileSize);
                 }
-                sV0 = wy / tileSize; sV1 = (wy + 1) / tileSize;
+                sV0 = TiledTextureCoordinates.tile(baseY, ly, tileSize); sV1 = TiledTextureCoordinates.tile(baseY, ly + 1, tileSize);
                 setUv4(tempUvs, sU0, sV1, sU1, sV1, sU1, sV0, sU0, sV0);
                 writer.writeFluidQuad(tempPositions, tempUvs, fnx, fny, fnz, color,
                         null, 0, 0, 1, 1, layer, texManager);

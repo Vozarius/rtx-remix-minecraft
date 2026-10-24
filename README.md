@@ -43,7 +43,9 @@ folder of a Minecraft 1.21.1 installation running NeoForge 21.1.242 or newer.
 The JAR includes the Remix runtime. The official Minecraft Launcher is supported;
 see [NeoForge installation](docs/NEOFORGE.md).
 
-The port has automated build and JVM verification. Rendering and compatibility
+The port has automated build and JVM verification. Optional renderer adapters
+and the exact local mod inventory are documented in
+[Mod compatibility](docs/MOD_COMPATIBILITY.md). Rendering and compatibility
 with other NeoForge mods still require in-game testing.
 
 ## Requirements

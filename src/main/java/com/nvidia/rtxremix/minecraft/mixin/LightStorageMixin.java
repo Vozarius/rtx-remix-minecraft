@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.nvidia.rtxremix.minecraft.compat.RendererPresence;
 import com.nvidia.rtxremix.minecraft.terrain.VanillaSectionBuilds;
 import com.nvidia.rtxremix.minecraft.terrain.SkippedSectionRebuilds;
 import com.nvidia.rtxremix.minecraft.terrain.ServerLightSnapshot;
@@ -155,7 +156,8 @@ public abstract class LightStorageMixin<M extends ChunkToNibbleArrayMap<M>> impl
         rtxremix$classified = true;
         boolean clientEngine = chunkProvider.getWorld() instanceof ClientWorld;
         rtxremix$snapshotPolicy = new ClientLightSnapshotPolicy(
-                clientEngine, ClientLightSnapshotPolicy.ALIAS_ALLOWED);
+                clientEngine, ClientLightSnapshotPolicy.ALIAS_ALLOWED
+                        && !RendererPresence.hasWorkerRenderers());
         if (!clientEngine && ClientLightSnapshotPolicy.ALIAS_ALLOWED) {
             rtxremix$serverSnapshot = new ServerLightSnapshot();
         }

@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft;
 
+import com.nvidia.rtxremix.minecraft.compat.DynamicLightCompatibility;
 import com.nvidia.rtxremix.CameraInfo;
 import com.nvidia.rtxremix.CameraInfoParameterizedEXT;
 import com.nvidia.rtxremix.CameraType;
@@ -66,7 +67,6 @@ import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -804,6 +804,7 @@ public class RemixRenderer {
                 // one-frame lag between a spinning beacon and its beam.
                 lightManager.updateEntityLights(world, camera, tickDelta);
                 lightManager.updateLights(world);
+                DynamicLightCompatibility.update(world, remixApi);
             } finally {
                 perfTimer.end(perfLights);
             }
@@ -1461,6 +1462,7 @@ public class RemixRenderer {
         if (chunkManager != null) {
             chunkManager.clear();
         }
+        DynamicLightCompatibility.clear();
         if (lightManager != null) {
             lightManager.clear();
         }

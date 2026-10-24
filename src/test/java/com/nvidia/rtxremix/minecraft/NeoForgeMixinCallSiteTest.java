@@ -43,7 +43,11 @@ class NeoForgeMixinCallSiteTest {
                         targets.add(target.toString().replace('.', '/'));
                     }
                     for (String target : targets) {
-                        ClassNode targetClass = readClass(getClass().getResourceAsStream("/" + target + ".class"));
+                        InputStream resource = getClass().getResourceAsStream("/" + target + ".class");
+                        boolean optional = annotations(mixin.visibleAnnotations, mixin.invisibleAnnotations).stream()
+                                .anyMatch(annotation -> annotation.desc.equals("Lorg/spongepowered/asm/mixin/Pseudo;"));
+                        if (resource == null && optional) continue;
+                        ClassNode targetClass = readClass(resource);
                         checkAnchors(mixin, targetClass, missing);
                     }
                 }

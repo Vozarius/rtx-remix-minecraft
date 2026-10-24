@@ -4,6 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft;
 
+import com.nvidia.rtxremix.minecraft.compat.FrameGeneration;
+import com.nvidia.rtxremix.minecraft.compat.SpatialFrames;
 import com.nvidia.rtxremix.minecraft.weather.RemixWeatherRenderer;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.texture.AtlasAnimationForwarder;
@@ -50,7 +52,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.nvidia.rtxremix.ErrorCode;
 import com.nvidia.rtxremix.RemixException;
-
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.longs.LongSets;
@@ -88,7 +89,6 @@ import net.minecraft.util.math.ChunkPos;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -643,6 +643,7 @@ public class RtxRemixMod {
                                 .vertexCount(weather.getLastQuadCount() * 4);
                     }
                 }
+                FrameGeneration.capture(renderer.getInteropDepthTexture());
             }
         }
     }
@@ -2176,6 +2177,7 @@ public class RtxRemixMod {
         TracyGCListener.uninstall();
         closeOpenProfileScopes();
         remixFrameReadyToSubmit = false;
+        FrameGeneration.close();
         if (textureOverlay != null) {
             textureOverlay.shutdown();
             textureOverlay = null;
@@ -2365,6 +2367,7 @@ public class RtxRemixMod {
                 LongSet built = enabled
                         ? builtSections(client)
                         : LongSets.emptySet();
+                SpatialFrames.rebuild(client.world);
                 client.worldRenderer.reload();
                 if (enabled) {
                     recaptureTerrainForRemix(client, built);

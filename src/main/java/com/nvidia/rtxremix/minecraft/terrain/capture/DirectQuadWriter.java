@@ -41,17 +41,11 @@ public final class DirectQuadWriter {
 
     private static final int STRIDE = HardcodedVertex.STRIDE; // 64
     private static final int INDICES_PER_QUAD = 6;
-    private static final int MAX_BLOCK_QUADS = 128;
+    private static final int INITIAL_BLOCK_QUADS = 128;
     private static final float DECAL_NORMAL_DOT_EPSILON = 0.999f;
     private static final float DECAL_PLANE_DISTANCE_EPSILON = 1.0E-3f;
     private static final float DECAL_OVERLAP_EPSILON = 1.0E-4f;
 
-    /**
-     * Worst-case quads per 16x16x16 section.  4096 blocks x 6 faces = 24576.
-     * Used as the growth ceiling for bucket buffers, not for initial sizing.
-     */
-    private static final int MAX_SECTION_QUADS = 24576;
-    private static final int MAX_VERT_BUF_SIZE = MAX_SECTION_QUADS * 4 * STRIDE;
     /** Initial bucket capacity: 128 quads keeps small section buckets compact. */
     private static final int INITIAL_QUADS    = 128;
     private static final int INITIAL_VERT_SIZE = INITIAL_QUADS * 4 * STRIDE;       // 32 KB
@@ -101,11 +95,12 @@ public final class DirectQuadWriter {
         void writeQuad(float[] pos, int posOff,
                         float[] uvs, int uvOff,
                         float nx, float ny, float nz,
-                        int color, int boundsMin, int boundsMax) {
+                        int color, int[] colors, int colorOffset, int boundsMin, int boundsMax) {
             ensureVertexCapacity((vertexCount + 4) * STRIDE);
 
             for (int v = 0; v < 4; v++) {
                 int wo = (vertexCount + v) * STRIDE;
+                int vertexColor = colors == null ? color : colors[colorOffset + v];
                 float x = pos[posOff + v * 3];
                 float y = pos[posOff + v * 3 + 1];
                 float z = pos[posOff + v * 3 + 2];
@@ -117,14 +112,14 @@ public final class DirectQuadWriter {
                 vertices.putFloat(wo + 20, nz);
                 vertices.putFloat(wo + 24, uvs[uvOff + v * 2]);
                 vertices.putFloat(wo + 28, uvs[uvOff + v * 2 + 1]);
-                vertices.putInt(wo + 32,   color);
+                vertices.putInt(wo + 32,   vertexColor);
                 vertices.putInt(wo + 36,   boundsMin);
                 vertices.putInt(wo + 40,   boundsMax);
                 hashVertex(x, y, z,
                            nx, ny, nz,
                            uvs[uvOff + v * 2],
                            uvs[uvOff + v * 2 + 1],
-                           color, boundsMin, boundsMax);
+                           vertexColor, boundsMin, boundsMax);
             }
             vertexCount += 4;
             indexCount += INDICES_PER_QUAD;
@@ -134,8 +129,8 @@ public final class DirectQuadWriter {
             if (requiredBytes <= vertices.capacity()) return;
             int oldCap = vertices.capacity();
             int newCap = oldCap;
-            while (newCap < requiredBytes) newCap *= 2;
-            if (newCap > MAX_VERT_BUF_SIZE) newCap = MAX_VERT_BUF_SIZE;
+            while (newCap < requiredBytes && newCap <= Integer.MAX_VALUE / 2) newCap *= 2;
+            if (newCap < requiredBytes) throw new IllegalStateException("Terrain vertex buffer exceeds Java buffer capacity");
             ByteBuffer grown = ByteBuffer.allocate(newCap).order(ByteOrder.LITTLE_ENDIAN);
             ByteBuffer src = vertices.duplicate().order(ByteOrder.LITTLE_ENDIAN);
             src.position(0).limit(vertexCount * STRIDE);
@@ -190,24 +185,52 @@ public final class DirectQuadWriter {
     // --- per-block staging (flat arrays, zero alloc) ---
 
     private int stageCount;
-    private final float[] stagePos = new float[MAX_BLOCK_QUADS * 12];
-    private final float[] stageUvs = new float[MAX_BLOCK_QUADS * 8];
-    private final float[] stageNx  = new float[MAX_BLOCK_QUADS];
-    private final float[] stageNy  = new float[MAX_BLOCK_QUADS];
-    private final float[] stageNz  = new float[MAX_BLOCK_QUADS];
-    private final int[]   stageColor = new int[MAX_BLOCK_QUADS];
-    private final Identifier[] stageSpriteId = new Identifier[MAX_BLOCK_QUADS];
-    private final float[] stageSU0 = new float[MAX_BLOCK_QUADS];
-    private final float[] stageSV0 = new float[MAX_BLOCK_QUADS];
-    private final float[] stageSU1 = new float[MAX_BLOCK_QUADS];
-    private final float[] stageSV1 = new float[MAX_BLOCK_QUADS];
-    private final String[] stageLayer = new String[MAX_BLOCK_QUADS];
-    private final boolean[] stageOverlay = new boolean[MAX_BLOCK_QUADS];
-    private final boolean[] stageNeedsAlphaBlend = new boolean[MAX_BLOCK_QUADS];
-    private final BlockTextureManager.SpriteEntry[] stageSpriteEntry =
-            new BlockTextureManager.SpriteEntry[MAX_BLOCK_QUADS];
-    private final int[] stageCategory = new int[MAX_BLOCK_QUADS];
-    private final boolean[] stageDiscarded = new boolean[MAX_BLOCK_QUADS];
+    private float[] stagePos = new float[INITIAL_BLOCK_QUADS * 12];
+    private float[] stageUvs = new float[INITIAL_BLOCK_QUADS * 8];
+    private float[] stageNx  = new float[INITIAL_BLOCK_QUADS];
+    private float[] stageNy  = new float[INITIAL_BLOCK_QUADS];
+    private float[] stageNz  = new float[INITIAL_BLOCK_QUADS];
+    private int[]   stageColor = new int[INITIAL_BLOCK_QUADS * 4];
+    private Identifier[] stageSpriteId = new Identifier[INITIAL_BLOCK_QUADS];
+    private float[] stageSU0 = new float[INITIAL_BLOCK_QUADS];
+    private float[] stageSV0 = new float[INITIAL_BLOCK_QUADS];
+    private float[] stageSU1 = new float[INITIAL_BLOCK_QUADS];
+    private float[] stageSV1 = new float[INITIAL_BLOCK_QUADS];
+    private String[] stageLayer = new String[INITIAL_BLOCK_QUADS];
+    private boolean[] stageOverlay = new boolean[INITIAL_BLOCK_QUADS];
+    private boolean[] stageNeedsAlphaBlend = new boolean[INITIAL_BLOCK_QUADS];
+    private BlockTextureManager.SpriteEntry[] stageSpriteEntry =
+            new BlockTextureManager.SpriteEntry[INITIAL_BLOCK_QUADS];
+    private int[] stageCategory = new int[INITIAL_BLOCK_QUADS];
+    private boolean[] stageDiscarded = new boolean[INITIAL_BLOCK_QUADS];
+
+    private void ensureStageCapacity(int required) {
+        if (required <= stageNx.length) return;
+        int capacity = Math.max(required, stageNx.length * 2);
+        stagePos = Arrays.copyOf(stagePos, capacity * 12);
+        stageUvs = Arrays.copyOf(stageUvs, capacity * 8);
+        stageNx = Arrays.copyOf(stageNx, capacity);
+        stageNy = Arrays.copyOf(stageNy, capacity);
+        stageNz = Arrays.copyOf(stageNz, capacity);
+        stageColor = Arrays.copyOf(stageColor, capacity * 4);
+        stageSpriteId = Arrays.copyOf(stageSpriteId, capacity);
+        stageSU0 = Arrays.copyOf(stageSU0, capacity);
+        stageSV0 = Arrays.copyOf(stageSV0, capacity);
+        stageSU1 = Arrays.copyOf(stageSU1, capacity);
+        stageSV1 = Arrays.copyOf(stageSV1, capacity);
+        stageLayer = Arrays.copyOf(stageLayer, capacity);
+        stageOverlay = Arrays.copyOf(stageOverlay, capacity);
+        stageNeedsAlphaBlend = Arrays.copyOf(stageNeedsAlphaBlend, capacity);
+        stageSpriteEntry = Arrays.copyOf(stageSpriteEntry, capacity);
+        stageCategory = Arrays.copyOf(stageCategory, capacity);
+        stageDiscarded = Arrays.copyOf(stageDiscarded, capacity);
+    }
+
+    /** Preserves independently tinted vertices emitted by a model renderer. */
+    public void stageVertexColors(int[] colors) {
+        if (stageCount == 0) throw new IllegalStateException("No staged quad");
+        System.arraycopy(colors, 0, stageColor, (stageCount - 1) * 4, 4);
+    }
 
     // --- public API ---
 
@@ -253,12 +276,12 @@ public final class DirectQuadWriter {
                            int color, Identifier spriteId,
                            float su0, float sv0, float su1, float sv1,
                            String renderLayer) {
-        if (stageCount >= MAX_BLOCK_QUADS) return;
+        ensureStageCapacity(stageCount + 1);
         int i = stageCount++;
         System.arraycopy(positions, 0, stagePos, i * 12, 12);
         System.arraycopy(uvs, 0, stageUvs, i * 8, 8);
         stageNx[i] = nx; stageNy[i] = ny; stageNz[i] = nz;
-        stageColor[i] = color;
+        Arrays.fill(stageColor, i * 4, i * 4 + 4, color);
         stageSpriteId[i] = spriteId;
         stageSU0[i] = su0; stageSV0[i] = sv0;
         stageSU1[i] = su1; stageSV1[i] = sv1;
@@ -275,7 +298,13 @@ public final class DirectQuadWriter {
                                 int color, Identifier spriteId,
                                 float su0, float sv0, float su1, float sv1,
                                 String renderLayer, BlockTextureManager tex) {
+        writeFluidQuad(positions, uvs, nx, ny, nz, color, spriteId, su0, sv0, su1, sv1, renderLayer, tex, null);
+    }
 
+    /** Writes a fluid quad with independent albedo colours supplied by the renderer. */
+    public void writeFluidQuad(float[] positions, float[] uvs, float nx, float ny, float nz,
+                               int color, Identifier spriteId, float su0, float sv0, float su1, float sv1,
+                               String renderLayer, BlockTextureManager tex, int[] vertexColors) {
         int layerType = BlockTextureManager.layerType(renderLayer);
         boolean isWater = spriteId == null;
 
@@ -297,7 +326,7 @@ public final class DirectQuadWriter {
         int boundsMax = isWater ? HardcodedVertex.packHalf2x16(1, 1)
                                 : HardcodedVertex.packHalf2x16(su1, sv1);
 
-        bb.writeQuad(positions, 0, uvs, 0, nx, ny, nz, color, boundsMin, boundsMax);
+        bb.writeQuad(positions, 0, uvs, 0, nx, ny, nz, color, vertexColors, 0, boundsMin, boundsMax);
     }
 
     /**
@@ -338,7 +367,7 @@ public final class DirectQuadWriter {
 
             bb.writeQuad(stagePos, i * 12, stageUvs, i * 8,
                          stageNx[i], stageNy[i], stageNz[i],
-                         stageColor[i], boundsMin, boundsMax);
+                         0, stageColor, i * 4, boundsMin, boundsMax);
         }
 
         Arrays.fill(stageSpriteId, 0, stageCount, null);
@@ -386,7 +415,7 @@ public final class DirectQuadWriter {
                 + stageNz[a] * stageNz[b];
         if (normalDot > -DECAL_NORMAL_DOT_EPSILON) return false;
 
-        if (stageColor[a] != stageColor[b]
+        if (!Arrays.equals(stageColor, a * 4, a * 4 + 4, stageColor, b * 4, b * 4 + 4)
                 || !Objects.equals(stageSpriteId[a], stageSpriteId[b])
                 || !Objects.equals(stageLayer[a], stageLayer[b])
                 || stageSU0[a] != stageSU0[b]

@@ -4,6 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
+import com.nvidia.rtxremix.minecraft.compat.SpatialFrame;
+
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.ChunkSectionPos;
@@ -45,8 +47,16 @@ public record SectionBlockData(
      * flood fill when seeding the 3D connectivity BFS from the player's
      * position.
      */
-    long[] opacityBitmap
+    long[] opacityBitmap,
+    SpatialFrame frame
 ) {
+    public SectionBlockData(ChunkSectionPos sectionPos, SectionMeshData meshData, List<LightEntry> lights,
+                            long topFaceMask, long bottomFaceMask, long eastFaceMask, long westFaceMask,
+                            long southFaceMask, long northFaceMask, long[] opacityBitmap) {
+        this(sectionPos, meshData, lights, topFaceMask, bottomFaceMask, eastFaceMask, westFaceMask,
+                southFaceMask, northFaceMask, opacityBitmap, null);
+    }
+
     /**
      * A single quad with all rendering context resolved at generation time.
      *

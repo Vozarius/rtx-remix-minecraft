@@ -4,6 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain;
 
+import com.nvidia.rtxremix.minecraft.compat.RendererPresence;
+
 /**
  * Decides how one client light storage publishes its thread-safe snapshot in
  * {@code LightStorage.notifyChanges}.
@@ -88,6 +90,9 @@ public final class ClientLightSnapshotPolicy {
 
     /** One startup log line that makes every run self-describing. */
     public static String effectiveStateLine() {
+        if (RendererPresence.hasWorkerRenderers()) {
+            return "Client light snapshot: immutable copy for external chunk renderers";
+        }
         return ALIAS_ALLOWED
                 ? "Client light snapshot: live map while RTX capture is on (" + PROPERTY + "=false)"
                 : "Client light snapshot: vanilla per-pass clone (" + PROPERTY + "=true)";

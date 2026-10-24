@@ -326,7 +326,7 @@ public final class BlockLightRuleManager {
                              float x, float y, float z, float radius,
                              LightEntry.ColorOverride color, Float intensity) {
         return LightEntry.sphere(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
-                pos.getX() + x, pos.getY() + y, pos.getZ() + z,
+                (double) pos.getX() + x, (double) pos.getY() + y, (double) pos.getZ() + z,
                 radius, color, intensity, LightEntry.defaultVolumetricRadianceScale());
     }
 
@@ -338,7 +338,7 @@ public final class BlockLightRuleManager {
                                    float volumetricRadianceScale) {
         Vec3 dir = direction.normalized();
         return LightEntry.shapedSphere(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
-                pos.getX() + x, pos.getY() + y, pos.getZ() + z,
+                (double) pos.getX() + x, (double) pos.getY() + y, (double) pos.getZ() + z,
                 radius, color, intensity,
                 dir.x, dir.y, dir.z,
                 coneAngleDegrees, coneSoftness, focusExponent,
@@ -351,7 +351,7 @@ public final class BlockLightRuleManager {
                                LightEntry.ColorOverride color, Float intensity) {
         Vec3 normal = axis.normalized();
         return LightEntry.cylinder(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
-                pos.getX() + x, pos.getY() + y, pos.getZ() + z,
+                (double) pos.getX() + x, (double) pos.getY() + y, (double) pos.getZ() + z,
                 radius, normal.x, normal.y, normal.z, axisLength,
                 color, intensity, LightEntry.defaultVolumetricRadianceScale());
     }
@@ -542,12 +542,12 @@ public final class BlockLightRuleManager {
             Vec3 p = position.resolve(state, sampler);
             return switch (shape) {
                 case SPHERE -> LightEntry.sphere(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
-                        pos.getX() + p.x, pos.getY() + p.y, pos.getZ() + p.z,
+                        (double) pos.getX() + p.x, (double) pos.getY() + p.y, (double) pos.getZ() + p.z,
                         radius, color, intensity, volumetricRadianceScale);
                 case CYLINDER -> {
                     Vec3 resolvedAxis = axis.resolve(state).normalized();
                     yield LightEntry.cylinder(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
-                            pos.getX() + p.x, pos.getY() + p.y, pos.getZ() + p.z,
+                            (double) pos.getX() + p.x, (double) pos.getY() + p.y, (double) pos.getZ() + p.z,
                             radius, resolvedAxis.x, resolvedAxis.y, resolvedAxis.z, axisLength,
                             color, intensity, volumetricRadianceScale);
                 }
@@ -556,7 +556,7 @@ public final class BlockLightRuleManager {
                     Vec3 ya = yAxis.resolve(state).normalized();
                     Vec3 dir = direction.resolve(state).normalized();
                     yield LightEntry.rect(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
-                            pos.getX() + p.x, pos.getY() + p.y, pos.getZ() + p.z,
+                            (double) pos.getX() + p.x, (double) pos.getY() + p.y, (double) pos.getZ() + p.z,
                             xa.x, xa.y, xa.z, Objects.requireNonNullElse(xSize, 1.0f),
                             ya.x, ya.y, ya.z, Objects.requireNonNullElse(ySize, 1.0f),
                             dir.x, dir.y, dir.z,
@@ -567,7 +567,7 @@ public final class BlockLightRuleManager {
                     Vec3 ya = yAxis.resolve(state).normalized();
                     Vec3 dir = direction.resolve(state).normalized();
                     yield LightEntry.disk(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
-                            pos.getX() + p.x, pos.getY() + p.y, pos.getZ() + p.z,
+                            (double) pos.getX() + p.x, (double) pos.getY() + p.y, (double) pos.getZ() + p.z,
                             xa.x, xa.y, xa.z, Objects.requireNonNullElse(xRadius, 0.5f),
                             ya.x, ya.y, ya.z, Objects.requireNonNullElse(yRadius, 0.5f),
                             dir.x, dir.y, dir.z,

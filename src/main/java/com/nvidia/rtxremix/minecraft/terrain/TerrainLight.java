@@ -4,6 +4,12 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain;
 
+import java.util.Arrays;
+import com.nvidia.rtxremix.minecraft.compat.FrameLightTransform;
+import com.nvidia.rtxremix.minecraft.compat.SpatialFrame;
+import com.nvidia.rtxremix.minecraft.asset.RemixLightStore;
+import com.nvidia.rtxremix.Transform;
+import com.nvidia.rtxremix.LightInfo;
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
 import com.nvidia.rtxremix.minecraft.light.LightPower;
 
@@ -27,6 +33,11 @@ public final class TerrainLight {
     private static final float HYSTERESIS = 1.5f;
 
     public final RemixLight light;
+    private SpatialFrame frame;
+    private LightInfo sourceInfo, frameInfo;
+    private double sourceX, sourceY, sourceZ;
+    private final Transform pose = new Transform();
+    private final Transform previousPose = new Transform();
     private float x, y, z;
     private float power;
     private long lastDrawnFrame = Long.MIN_VALUE;
@@ -41,6 +52,33 @@ public final class TerrainLight {
         this.y = y;
         this.z = z;
         this.power = power;
+    }
+
+    public void attachFrame(SpatialFrame frame,
+                            LightInfo source, LightInfo world,
+                            double x, double y, double z) {
+        this.frame = frame;
+        this.sourceInfo = source;
+        this.frameInfo = world;
+        sourceX = x; sourceY = y; sourceZ = z;
+        frame.rtxremix$transform(x, y, z, pose);
+        applyFrame();
+    }
+
+    public LightInfo frameInfo() { return frameInfo; }
+
+    public void updateFrame() {
+        if (frame == null) return;
+        frame.rtxremix$transform(sourceX, sourceY, sourceZ, pose);
+        if (Arrays.equals(previousPose.matrix, pose.matrix)) return;
+        applyFrame();
+        RemixLightStore.get().update(light, frameInfo);
+    }
+
+    private void applyFrame() {
+        FrameLightTransform.apply(sourceInfo, frameInfo, pose);
+        x = pose.matrix[3]; y = pose.matrix[7]; z = pose.matrix[11];
+        System.arraycopy(pose.matrix, 0, previousPose.matrix, 0, 12);
     }
 
     public float power() {

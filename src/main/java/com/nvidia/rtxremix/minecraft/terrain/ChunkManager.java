@@ -4,6 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain;
 
+import com.nvidia.rtxremix.minecraft.compat.SpatialFrame;
+
 import com.nvidia.rtxremix.minecraft.util.LongObjectMap;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
@@ -254,12 +256,16 @@ public class ChunkManager {
             if (entry.lights().containsKey(mutation.key())) return;
             LightEntry incoming = mutation.incoming();
             BlockLightRadiance radiance = blockLightRadiance(incoming, textures);
-            LightInfo info = buildBlockLightInfo(incoming, radiance);
+            LightInfo localInfo = buildBlockLightInfo(incoming, radiance);
+            ColumnRenderState column = renderColumns.get(packChunkKey(section.cx(), section.cz()));
+            boolean moving = column != null && column.frame != null;
+            LightInfo info = moving ? buildBlockLightInfo(incoming, radiance) : localInfo;
             RemixLight light = new RemixLight(info, null);
-            RemixLightStore.get().create(light);
             TerrainLight record = new TerrainLight(light);
-            record.place(incoming.x(), incoming.y(), incoming.z(),
+            record.place((float) incoming.x(), (float) incoming.y(), (float) incoming.z(),
                     LightPower.of(incoming, radiance.r(), radiance.g(), radiance.b()));
+            if (moving) record.attachFrame(column.frame, localInfo, info, incoming.x(), incoming.y(), incoming.z());
+            RemixLightStore.get().create(light);
             entry.putLight(mutation.key(), record);
             entry.lightFingerprints().put(mutation.key(), mutation.fingerprint());
             terrain.adjustSectionLightCount(
@@ -272,9 +278,15 @@ public class ChunkManager {
             LightEntry incoming = mutation.incoming();
             BlockLightRadiance radiance = blockLightRadiance(incoming, textures);
             LightInfo info = buildBlockLightInfo(incoming, radiance);
-            RemixLightStore.get().update(mutation.existing(), info);
-            record.place(incoming.x(), incoming.y(), incoming.z(),
+            record.place((float) incoming.x(), (float) incoming.y(), (float) incoming.z(),
                     LightPower.of(incoming, radiance.r(), radiance.g(), radiance.b()));
+            ColumnRenderState column = renderColumns.get(packChunkKey(section.cx(), section.cz()));
+            if (column != null && column.frame != null) {
+                record.attachFrame(column.frame, info, buildBlockLightInfo(incoming, radiance),
+                        incoming.x(), incoming.y(), incoming.z());
+                info = record.frameInfo();
+            }
+            RemixLightStore.get().update(mutation.existing(), info);
             entry.lightFingerprints().put(mutation.key(), mutation.fingerprint());
         }
 
@@ -365,6 +377,9 @@ public class ChunkManager {
         final long key;
         final int cx;
         final int cz;
+        SpatialFrame frame;
+        final Transform transform = Transform.identity();
+        final Transform nextTransform = Transform.identity();
         final List<InstalledMeshPage> activePages = new ArrayList<>();
         final int[] categoryFingerprints = new int[CAT_COUNT];
         int generation;
@@ -788,7 +803,12 @@ public class ChunkManager {
             WorldChunk liveChunk = currentWorld == null
                     ? null
                     : currentWorld.getChunkManager().getWorldChunk(cx, cz, false);
-            if (liveChunk != null) {
+            ColumnRenderState state = renderColumns.get(chunkKey);
+            if (state != null && state.frame != null && state.frame.rtxremix$isAlive()) {
+                iterator.remove();
+                continue;
+            }
+            if (liveChunk != null && (state == null || state.frame == null)) {
                 iterator.remove();
                 continue;
             }
@@ -868,6 +888,8 @@ public class ChunkManager {
             return false;
         }
 
+        ColumnRenderState state = renderColumns.get(packChunkKey(cx, cz));
+        if (state != null && state.frame != null) return state.frame.rtxremix$isSectionEmpty(cx, sy, cz);
         WorldChunk wc = currentWorld.getChunkManager().getWorldChunk(cx, cz, false);
         return wc != null && wc.isSectionEmpty(sy);
     }
@@ -904,7 +926,8 @@ public class ChunkManager {
             if (currentWorld != null) {
                 liveChunk = currentWorld.getChunkManager().getWorldChunk(cx, cz, false);
             }
-            if (liveChunk == null) {
+            if ((cap.frame() == null && liveChunk == null)
+                    || (cap.frame() != null && !cap.frame().rtxremix$isAlive())) {
                 skipped++;
                 releaseMeshData(cap);
                 continue;
@@ -915,6 +938,10 @@ public class ChunkManager {
                 LOGGER.debug("Cancelled deferred unload for reloaded chunk ({},{})", cx, cz);
             }
 
+            ColumnRenderState previousColumn = renderColumns.get(chunkKey);
+            if (previousColumn != null && previousColumn.frame != cap.frame()) {
+                removeColumnDeferred(cx, cz);
+            }
             int hash = hashCapture(cap);
 
             TerrainState.SectionEntry newEntry = terrain.addSection(cx, sy, cz, hash, cap.meshData(),
@@ -933,6 +960,8 @@ public class ChunkManager {
                         oldEntry != null ? oldEntry.data : null,
                         newEntry.data), oldEntry != null);
             }
+            ColumnRenderState capturedColumn = renderColumns.get(chunkKey);
+            if (capturedColumn != null) capturedColumn.frame = cap.frame();
             LightSectionKey section = new LightSectionKey(cx, sy, cz);
             cancelLightTask(section);
             LightReconcileTask task = new LightReconcileTask(
@@ -1100,7 +1129,7 @@ public class ChunkManager {
         return switch (entry.shape()) {
             case SPHERE -> {
                 LightInfoSphereEXT.Builder sphere = LightInfoSphereEXT.builder()
-                        .position(entry.x(), entry.y(), entry.z())
+                        .position((float) entry.x(), (float) entry.y(), (float) entry.z())
                         .radius(entry.radius())
                         .volumetricRadianceScale(entry.volumetricRadianceScale());
                 // Spot lights: only sphere/rect/disk accept shaping in the Remix
@@ -1112,7 +1141,7 @@ public class ChunkManager {
             }
             case CYLINDER -> builder
                     .cylinderExt(LightInfoCylinderEXT.builder()
-                            .position(entry.x(), entry.y(), entry.z())
+                            .position((float) entry.x(), (float) entry.y(), (float) entry.z())
                             .radius(entry.radius())
                             .axis(entry.axisX(), entry.axisY(), entry.axisZ())
                             .axisLength(entry.axisLength())
@@ -1121,7 +1150,7 @@ public class ChunkManager {
                     .build();
             case RECT -> builder
                     .rectExt(LightInfoRectEXT.builder()
-                            .position(entry.x(), entry.y(), entry.z())
+                            .position((float) entry.x(), (float) entry.y(), (float) entry.z())
                             .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
                             .xSize(entry.xSize())
                             .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
@@ -1132,7 +1161,7 @@ public class ChunkManager {
                     .build();
             case DISK -> builder
                     .diskExt(LightInfoDiskEXT.builder()
-                            .position(entry.x(), entry.y(), entry.z())
+                            .position((float) entry.x(), (float) entry.y(), (float) entry.z())
                             .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
                             .xRadius(entry.xSize())
                             .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
@@ -1178,6 +1207,10 @@ public class ChunkManager {
                 bits(le.shapingDirectionX()), bits(le.shapingDirectionY()), bits(le.shapingDirectionZ()),
                 bits(le.coneAngleDegrees()), bits(le.coneSoftness()), bits(le.focusExponent()),
                 bits(le.volumetricRadianceScale()));
+    }
+
+    private static int bits(double value) {
+        return Long.hashCode(Double.doubleToLongBits(value));
     }
 
     private static int bits(float value) {
@@ -1427,7 +1460,7 @@ public class ChunkManager {
                 pages[pageIndex] = null;
 
                 instance = new RemixInstance(mesh)
-                        .setTransform(columnTransform(result.owner().cx, result.owner().cz))
+                        .setTransform(columnTransform(result.owner()))
                         .setCategoryFlags(categoryFlags | InstanceCategoryBit.HIDDEN)
                         .setBlendExt(blendExtForCategory(category))
                         .setDoubleSided(true);
@@ -1577,7 +1610,8 @@ public class ChunkManager {
         return result.epoch() != epoch
                 || renderColumns.get(owner.key) != owner
                 || result.generation() != owner.generation
-                || terrain.findColumn(owner.cx, owner.cz) == null;
+                || terrain.findColumn(owner.cx, owner.cz) == null
+                || (owner.frame != null && !owner.frame.rtxremix$isAlive());
     }
 
     private MeshBuildResult pollCompletedBuild() {
@@ -1686,8 +1720,8 @@ public class ChunkManager {
     }
 
     private static long columnDistanceSq(ColumnRenderState state, int cx, int cz) {
-        long dx = (long) state.cx - cx;
-        long dz = (long) state.cz - cz;
+        long dx = state.frame == null ? (long) state.cx - cx : (long) Math.floor(state.transform.matrix[3] / 16.0) - cx;
+        long dz = state.frame == null ? (long) state.cz - cz : (long) Math.floor(state.transform.matrix[11] / 16.0) - cz;
         return dx * dx + dz * dz;
     }
 
@@ -1727,6 +1761,7 @@ public class ChunkManager {
 
     /** @return the number of native instance submits this pass made */
     private int draw(RemixAPI api, PerformanceTimer t, Vec3d cam) {
+        updateMovingColumns(api);
         t.begin(perfBfs);
         try (ProfileScope bfsScope = ProfileScope.begin("BFS reachability")) {
             terrain.ensureReachabilityOnce();
@@ -1746,6 +1781,7 @@ public class ChunkManager {
             // leaving handles inactive until something submits them again.
             if (retainedInstancesHidden) {
                 for (ColumnRenderState state : renderColumns.values()) {
+                    if (state.frame != null && !state.frame.rtxremix$isAlive()) continue;
                     for (int pageIndex = 0; pageIndex < state.activePages.size(); pageIndex++) {
                         RemixInstance instance = state.activePages.get(pageIndex).instance;
                         if (instance != null && !instance.isDeletedFast()) {
@@ -1760,20 +1796,24 @@ public class ChunkManager {
             }
 
             for (TerrainState.ChunkColumn column : terrain.columns()) {
-                if (!terrain.isColumnWithinLightCullRange(column.cx, column.cz)) {
+                ColumnRenderState state = renderColumns.get(packChunkKey(column.cx, column.cz));
+                boolean moving = state != null && state.frame != null;
+                if ((moving && !state.frame.rtxremix$isAlive())
+                        || (!moving && !terrain.isColumnWithinLightCullRange(column.cx, column.cz))) {
                     lightsCulled += column.lightCount();
                     continue;
                 }
                 List<TerrainState.SectionEntry> sections = column.sectionEntries();
                 for (int sectionIndex = 0; sectionIndex < sections.size(); sectionIndex++) {
                     TerrainState.SectionEntry entry = sections.get(sectionIndex);
-                    if (!terrain.isSectionReachableForLights(column.cx, column.cz, entry.sy)) {
+                    if (!moving && !terrain.isSectionReachableForLights(column.cx, column.cz, entry.sy)) {
                         lightsCulled += entry.lightCount();
                         continue;
                     }
                     List<TerrainLight> lights = entry.lightEntries();
                     for (int lightIndex = 0; lightIndex < lights.size(); lightIndex++) {
                         TerrainLight light = lights.get(lightIndex);
+                        if (moving) light.updateFrame();
                         if (light.shouldDraw(cam.x, cam.y, cam.z, lightReachThreshold, terrainFrame)) {
                             light.light.drawFast(api);
                             lightsDrawn++;
@@ -1835,6 +1875,8 @@ public class ChunkManager {
             int cx = (int) (key >> 32);
             int cz = (int) key;
             WorldChunk chunk = currentWorld.getChunkManager().getWorldChunk(cx, cz, false);
+            ColumnRenderState state = renderColumns.get(key);
+            if (state != null && state.frame != null && state.frame.rtxremix$isAlive()) continue;
             if (chunk == null && terrain.findColumn(cx, cz) != null) {
                 // The column left without an unload event, so nothing has
                 // cancelled its light tasks yet.
@@ -1924,10 +1966,29 @@ public class ChunkManager {
         };
     }
 
-    private static Transform columnTransform(int cx, int cz) {
+    private static Transform columnTransform(ColumnRenderState state) {
         Transform transform = Transform.identity();
-        transform.setTranslation(cx * 16f, 0f, cz * 16f);
+        if (state.frame == null) transform.setTranslation(state.cx * 16f, 0f, state.cz * 16f);
+        else state.frame.rtxremix$transform(state.cx * 16.0, 0, state.cz * 16.0, transform);
         return transform;
+    }
+
+    private void updateMovingColumns(RemixAPI api) {
+        for (ColumnRenderState state : renderColumns.values()) {
+            if (state.frame == null) continue;
+            if (!state.frame.rtxremix$isAlive()) {
+                pendingColumnUnloads.add(state.key);
+                for (InstalledMeshPage page : state.activePages) page.instance.hideFromScene(api);
+                continue;
+            }
+            state.frame.rtxremix$transform(state.cx * 16.0, 0, state.cz * 16.0, state.nextTransform);
+            if (Arrays.equals(state.transform.matrix, state.nextTransform.matrix)) continue;
+            System.arraycopy(state.nextTransform.matrix, 0, state.transform.matrix, 0, 12);
+            for (InstalledMeshPage page : state.activePages) {
+                page.instance.setTransform(state.transform);
+                page.instance.drawFast(api);
+            }
+        }
     }
 
     private static int hashCapture(SectionBlockData cap) {

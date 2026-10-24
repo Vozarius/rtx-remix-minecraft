@@ -203,16 +203,39 @@ dependencies {
     }
     neoForge "net.neoforged:neoforge:21.1.242"
 
+    // Optional renderer APIs are remapped with Minecraft and never bundled.
+    modCompileOnly files(zipTree('reference/sodium-neoforge-0.8.13+mc1.21.1.jar')
+            .matching { include 'META-INF/jarjar/*.jar' }.files)
+    modCompileOnly files(zipTree('reference/create-1.21.1-6.0.11.jar')
+            .matching { include 'META-INF/jarjar/flywheel-*.jar' }.singleFile)
+    modCompileOnly files('reference/sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar')
+    modCompileOnly files('reference/framegen-1.4-neoforge-1.21.1.jar')
+    modCompileOnly files('reference/sable-neoforge-1.21.1-2.0.5.jar')
+    modCompileOnly files(zipTree('reference/sable-neoforge-1.21.1-2.0.5.jar')
+            .matching { include 'META-INF/jarjar/*companion*.jar' }.singleFile)
+
     // Testing
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
+
+sourceSets.test.runtimeClasspath += sourceSets.main.compileClasspath
 
 test {
     useJUnitPlatform()
     dependsOn tasks.named('remapJar')
     inputs.file(tasks.named('remapJar').flatMap { it.archiveFile })
     doFirst {
+        def productionMinecraft = loom.getMinecraftJars(net.fabricmc.loom.api.mappings.layered.MappingsNamespace.MOJANG)
+        systemProperty 'rtxremix.referenceVerifierClasspath', files(sourceSets.test.output,
+                tasks.named('remapJar').get().archiveFile.get().asFile, productionMinecraft,
+                configurations.testRuntimeClasspath).asPath
+        def referenceArchives = fileTree('reference') { include '*.jar' }.files
+        def nestedReferenceApis = ['sodium-neoforge-0.8.13+mc1.21.1.jar',
+                'create-1.21.1-6.0.11.jar', 'sable-neoforge-1.21.1-2.0.5.jar'].collectMany { name ->
+            zipTree(file("reference/${name}")).matching { include 'META-INF/jarjar/*.jar' }.files.toList()
+        }
+        systemProperty 'rtxremix.referenceJars', files(referenceArchives, nestedReferenceApis).asPath
         systemProperty 'rtxremix.remappedJar', tasks.named('remapJar').get().archiveFile.get().asFile.absolutePath
         systemProperty 'rtxremix.mojangJars', loom.getMinecraftJars(
                 net.fabricmc.loom.api.mappings.layered.MappingsNamespace.MOJANG)
