@@ -6,6 +6,9 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import net.minecraft.block.BlockState;
+import net.minecraft.world.BlockRenderView;
+import net.minecraft.util.math.BlockPos;
+import net.neoforged.neoforge.client.model.data.ModelData;
 import net.minecraft.client.render.block.BlockRenderManager;
 import net.minecraft.client.render.model.BakedModel;
 import net.minecraft.client.render.model.BakedQuad;
@@ -41,6 +44,8 @@ public final class ModelSampling implements BlockLightRuleManager.ModelSampler {
     private BlockRenderManager blockRenderManager;
     private BlockState state;
     private long seed;
+    private BlockRenderView world;
+    private BlockPos pos;
 
     private BakedModel model;
     private boolean modelResolved;
@@ -53,7 +58,10 @@ public final class ModelSampling implements BlockLightRuleManager.ModelSampler {
     private boolean centroidComputed;
 
     /** Rebinds this sampler to a new block and drops everything memoised. */
-    public void begin(BlockRenderManager blockRenderManager, BlockState state, long seed) {
+    public void begin(BlockRenderManager blockRenderManager, BlockState state, long seed,
+                      BlockRenderView world, BlockPos pos) {
+        this.world = world;
+        this.pos = pos;
         this.blockRenderManager = blockRenderManager;
         this.state = state;
         this.seed = seed;
@@ -101,11 +109,12 @@ public final class ModelSampling implements BlockLightRuleManager.ModelSampler {
         }
         if (model == null) return;
 
+        ModelData data = model.getModelData(world, pos, state, world.getModelData(pos));
         for (Direction dir : DIRECTIONS) {
             // Re-seed per direction exactly as the emission loop does, so a
             // multi-variant model resolves to the same variant here as on screen.
             random.setSeed(seed);
-            for (BakedQuad quad : model.getQuads(state, dir, random)) {
+            for (BakedQuad quad : model.getQuads(state, dir, random, data, null)) {
                 int[] vd = quad.getVertexData();
                 ensureCapacity(vertexCount + 4);
                 for (int v = 0; v < 4; v++) {

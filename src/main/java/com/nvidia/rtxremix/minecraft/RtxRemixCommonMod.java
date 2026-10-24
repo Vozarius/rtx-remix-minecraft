@@ -1,48 +1,29 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 package com.nvidia.rtxremix.minecraft;
 
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconUpdatePayload;
-import com.nvidia.rtxremix.minecraft.block.SpotLightBlock;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconScreenHandler;
-import net.fabricmc.api.ModInitializer;
+import com.nvidia.rtxremix.minecraft.block.CopperBeaconUpdatePayload;
+import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlock;
+import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
+import com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamParticles;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.common.Mod;
 
-/**
- * Common (both-sides) entrypoint.
- *
- * <p>The renderer itself is client-only and lives in {@link RtxRemixMod}. This
- * class exists solely for content that must exist on the logical server too:
- * currently the beacon blocks.
- *
- * <p><b>Why this is separate:</b> blocks live in a <i>synced</i> registry. A
- * block registered only on the client desynchronises from a server that has
- * never heard of it, so it cannot be placed or persisted in multiplayer.
- * Particles ({@code RapidFoamParticles}) do not have this problem: that
- * registry is client-side, which is why they stay in the client entrypoint.
- *
- * <p>Everything reachable from here must avoid client-only classes: this runs
- * on dedicated servers, where {@code net.minecraft.client.*} does not exist.
- * Fabric invokes {@code main} entrypoints before {@code client} ones, so blocks
- * are registered before {@link RtxRemixMod#onInitializeClient()} runs.
- */
-public class RtxRemixCommonMod implements ModInitializer {
-
-    /**
-     * The mod id, and the namespace of every identifier this mod registers.
-     *
-     * <p>Owned by this class rather than by {@link RtxRemixMod}: block
-     * registration runs on dedicated servers, where the client entrypoint
-     * cannot be loaded, so a constant that path depends on must not live on a
-     * client-only class.
-     */
+/** Registers content on both physical sides; starts the renderer only on the client. */
+@Mod(RtxRemixCommonMod.LOADER_MOD_ID)
+public final class RtxRemixCommonMod {
+    public static final String LOADER_MOD_ID = "rtx_remix_renderer";
+    /** Resource and save-data namespace, retained for existing worlds and packs. */
     public static final String MOD_ID = "rtx-remix-renderer";
 
-    @Override
-    public void onInitialize() {
-        SpotLightBlock.registerAll();
-        CopperBeaconScreenHandler.register();
-        CopperBeaconUpdatePayload.register();
+    public RtxRemixCommonMod(IEventBus modBus) {
+        CopperBeaconBlock.register(modBus);
+        CopperBeaconBlockEntity.register(modBus);
+        CopperBeaconScreenHandler.register(modBus);
+        RapidFoamParticles.registerTypes(modBus);
+        modBus.addListener(CopperBeaconUpdatePayload::register);
     }
 }

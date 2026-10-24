@@ -157,14 +157,10 @@ def test_install_reports_resource_pack_migration_failure(installation, migration
     assert "Installed to" not in output
 
 
-def test_install_warns_about_missing_fabric_api_without_installing_it(installation, capsys):
+def test_install_neoforge_build_needs_no_fabric_api(installation, capsys):
     _, game = installation
-
     assert run_install(game) == 0
-
-    output = capsys.readouterr().out
-    assert f"WARNING: no fabric-api jar in {game / 'mods'}." in output
-    assert "fabric-api >=0.116.10+1.21.1 (https://modrinth.com/mod/fabric-api)" in output
+    assert "fabric-api" not in capsys.readouterr().out
     assert list((game / "mods").glob("fabric-api-*.jar")) == []
 
 

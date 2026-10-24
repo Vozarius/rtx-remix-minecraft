@@ -100,9 +100,9 @@ public class RemixAPI {
      */
     public static int redactCommandLineOptions(String dllPath, Collection<String> options) {
         bindBridge(dllPath);
-        CommandLineRedaction.Result redaction =
-                CommandLineRedaction.redact(RemixBridge.processCommandLine(), options);
-        if (redaction.blankedValues() > 0) {
+        String commandLine = RemixBridge.processCommandLine();
+        CommandLineRedaction.Result redaction = CommandLineRedaction.redact(commandLine, options);
+        if (!redaction.commandLine().equals(commandLine)) {
             int result = RemixBridge.overwriteProcessCommandLine(redaction.commandLine());
             if (result != ErrorCode.SUCCESS) {
                 throw new RemixException("Failed to rewrite the process command line", result);

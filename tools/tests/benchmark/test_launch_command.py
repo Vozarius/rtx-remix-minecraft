@@ -321,7 +321,7 @@ class ArtPackFetchFailureTests(unittest.TestCase):
 
                     self.assertTrue(self.game_started())
                     options = (self.run_dir / "options.txt").read_text(encoding="utf-8")
-                    self.assertIn('resourcePacks:["vanilla","fabric"]', options)
+                    self.assertIn('resourcePacks:["vanilla","mod_resources"]', options)
                     self.assertIn(
                         f"Retry the download with tools\\rtx.bat resourcepack fetch {self.pin['name']}.",
                         self.stderr.getvalue(),

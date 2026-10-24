@@ -131,7 +131,7 @@ public abstract class ChunkDataSenderMixin {
     @WrapOperation(
             method = "unload",
             at = @At(value = "INVOKE",
-                    target = "Lnet/minecraft/server/network/ServerPlayNetworkHandler;sendPacket(Lnet/minecraft/network/packet/Packet;)V"))
+                    target = "Lnet/minecraft/server/network/ServerPlayNetworkHandler;send(Lnet/minecraft/network/packet/Packet;)V"))
     private void rtxremix$queueLocalUnload(ServerPlayNetworkHandler handler, Packet<?> packet, Operation<Void> original,
                                            ServerPlayerEntity player, ChunkPos pos) {
         if (!local || !LocalChunkBatchPacing.UNLOAD_ENABLED || !RtxRemixMod.isRtxEnabled()) {
@@ -173,7 +173,7 @@ public abstract class ChunkDataSenderMixin {
             return;
         }
         ServerPlayNetworkHandler handler = player.networkHandler;
-        LongConsumer send = key -> handler.sendPacket(new UnloadChunkS2CPacket(new ChunkPos(key)));
+        LongConsumer send = key -> handler.send(new UnloadChunkS2CPacket(new ChunkPos(key)));
         if (!RtxRemixMod.isRtxEnabled()) {
             // Counted so the totals stay right; the terrain counters that read them are
             // off with capture, so the flush shows in the first frame after it returns.

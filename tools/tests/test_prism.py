@@ -246,7 +246,7 @@ def test_write_instance_pins_versions_and_quotes_spaced_args(tmp_path):
     pack = json.loads((tmp_path / "instances" / "rtx-remix-dev" / "mmc-pack.json").read_text(encoding="utf-8"))
     assert {c["uid"]: c["version"] for c in pack["components"]} == {
         "net.minecraft": prism.installer_constant("MC_VERSION"),
-        "net.fabricmc.fabric-loader": prism.installer_constant("FABRIC_LOADER_VER"),
+        "net.neoforged": prism.installer_constant("NEOFORGE_VERSION"),
     }
     assert game == tmp_path / "instances" / "rtx-remix-dev" / ".minecraft" and game.is_dir()
 
@@ -281,9 +281,9 @@ def test_write_instance_writes_the_instance_settings_and_component_shape(tmp_pat
         "version": prism.installer_constant("MC_VERSION"),
     }
     assert loader == {
-        "cachedName": "Fabric Loader",
-        "uid": "net.fabricmc.fabric-loader",
-        "version": prism.installer_constant("FABRIC_LOADER_VER"),
+        "cachedName": "NeoForge",
+        "uid": "net.neoforged",
+        "version": prism.installer_constant("NEOFORGE_VERSION"),
     }
 
 
@@ -597,7 +597,7 @@ def test_installer_constant_reads_a_single_quoted_assignment(tmp_path, monkeypat
 
 def test_installer_constant_reads_the_pinned_versions():
     assert prism.installer_constant("MC_VERSION")
-    assert prism.installer_constant("FABRIC_LOADER_VER")
+    assert prism.installer_constant("NEOFORGE_VERSION")
     assert "-Xmx" in prism.installer_constant("RECOMMENDED_JVM_ARGS")
 
 

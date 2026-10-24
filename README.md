@@ -1,4 +1,4 @@
-# RTX Remix for Minecraft
+# RTX Remix for Minecraft - NeoForge 1.21.1
 
 Play Minecraft Java Edition 1.21.1 with real-time path tracing on a GeForce RTX
 GPU, powered by NVIDIA RTX Remix.
@@ -29,19 +29,22 @@ We hope the community helps fill it out. If something breaks,
 [report it](docs/PLAYING.md#reporting-a-bug); if you can fix it, see
 [Contributing](#contributing).
 
-## Download
+## Build and install
 
-Download the release archive from the
-[Releases page](https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest).
+This checkout is a native NeoForge port. Build the installable JAR with Java 21
+and the Windows C++ toolchain:
 
-## Install in three steps
+```powershell
+.\gradlew.bat package -Parch=win64
+```
 
-1. Extract the release archive.
-2. Double-click `install.bat` and follow the menu.
-3. Launch the **NVIDIA RTX Remix for Minecraft** profile from your launcher.
+Put `build/distributions/rtx-remix-renderer-neoforge-*.jar` into the `mods`
+folder of a Minecraft 1.21.1 installation running NeoForge 21.1.242 or newer.
+The JAR includes the Remix runtime. The official Minecraft Launcher is supported;
+see [NeoForge installation](docs/NEOFORGE.md).
 
-The step-by-step version, with launcher advice and troubleshooting, is in
-[Playing](docs/PLAYING.md).
+The port has automated build and JVM verification. Rendering and compatibility
+with other NeoForge mods still require in-game testing.
 
 ## Requirements
 
@@ -52,7 +55,7 @@ The step-by-step version, with launcher advice and troubleshooting, is in
 - An internet connection while the installer runs.
 - 16 GB of system memory is recommended.
 
-Java 21, Fabric, and the RTX Remix runtime are installed for you.
+The release installer configures Java 21, NeoForge, and the RTX Remix runtime.
 
 Building and running from source has its own
 [prerequisites](docs/GETTING_STARTED.md#prerequisites), including Prism

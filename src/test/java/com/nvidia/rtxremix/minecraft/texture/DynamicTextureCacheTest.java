@@ -36,14 +36,14 @@ class DynamicTextureCacheTest {
     @Test
     void aGlyphPageIsReadLiveAndOutlivesClear() {
         Identifier id = Identifier.of("minecraft", "default/0");
-        GlyphPageMirror page = new GlyphPageMirror(false);
+        GlyphPageMirror page = new GlyphPageMirror(256, 256, false);
         DynamicTextureCache.onRegisterGlyphPage(id, page);
 
         assertTrue(DynamicTextureCache.isGlyphPage(id));
         DynamicTextureCache.Pixels empty = DynamicTextureCache.get(id);
         assertSame(page.data(), empty.data());
-        assertEquals(GlyphPageMirror.PAGE_SIZE, empty.width());
-        assertEquals(GlyphPageMirror.PAGE_SIZE, empty.height());
+        assertEquals(page.width(), empty.width());
+        assertEquals(page.height(), empty.height());
         assertEquals(0L, empty.version());
 
         page.blit(0, 0, 1, 1, 4, ByteBuffer.wrap(new byte[] {1, 2, 3, 4}), 4);
@@ -57,10 +57,25 @@ class DynamicTextureCacheTest {
     }
 
     @Test
+    void enlargedGlyphPageKeepsItsDimensionsAndLivePixels() {
+        Identifier id = Identifier.of("minecraft", "enlarged/0");
+        GlyphPageMirror page = new GlyphPageMirror(2048, 1024, true);
+        DynamicTextureCache.onRegisterGlyphPage(id, page);
+        page.blit(2047, 1023, 1, 1, 1, ByteBuffer.wrap(new byte[] {42}), 1);
+
+        DynamicTextureCache.Pixels pixels = DynamicTextureCache.get(id);
+        assertEquals(2048, pixels.width());
+        assertEquals(1024, pixels.height());
+        assertSame(page.data(), pixels.data());
+        assertEquals(42, pixels.data()[pixels.data().length - 1]);
+        assertEquals(page.version(), pixels.version());
+    }
+
+    @Test
     void aPageReRegisteredUnderItsIdReplacesItsPredecessor() {
         Identifier id = Identifier.of("minecraft", "default/1");
-        GlyphPageMirror replaced = new GlyphPageMirror(false);
-        GlyphPageMirror fresh = new GlyphPageMirror(true);
+        GlyphPageMirror replaced = new GlyphPageMirror(256, 256, false);
+        GlyphPageMirror fresh = new GlyphPageMirror(256, 256, true);
         DynamicTextureCache.onRegisterGlyphPage(id, replaced);
 
         DynamicTextureCache.onRegisterGlyphPage(id, fresh);

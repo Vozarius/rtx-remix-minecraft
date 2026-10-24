@@ -623,28 +623,34 @@ Java_com_nvidia_rtxremix_RemixBridge_overwriteProcessCommandLine(JNIEnv* env, jc
 
     std::vector<WCHAR> replacement(length);
     env->GetStringRegion(jReplacement, 0, length, (jchar*)replacement.data());
+    const size_t liveLength = wcsnlen(replacement.data(), length);
 
-    // GetCommandLineA returns an ANSI conversion made at process start, sized
-    // for the original line. Converting the replacement must fit in it, and is
-    // shorter whenever a blanked character took more than one byte.
+    // Driver workarounds can shorten the API strings without updating the PEB
+    // length. Convert only the live prefix, while the PEB's stale tail is cleared.
     char* ansi = GetCommandLineA();
     const size_t originalAnsiLength = strlen(ansi);
-    const int ansiLength = WideCharToMultiByte(CP_ACP, 0, replacement.data(), length,
-        nullptr, 0, nullptr, nullptr);
-    if (ansiLength <= 0 || (size_t)ansiLength > originalAnsiLength)
+    const int ansiLength = liveLength == 0 ? 0 : WideCharToMultiByte(CP_ACP, 0,
+        replacement.data(), (int)liveLength, nullptr, 0, nullptr, nullptr);
+    if ((liveLength > 0 && ansiLength <= 0) || (size_t)ansiLength > originalAnsiLength)
         return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
 
     // GetCommandLineW normally returns the PEB buffer itself. A separate copy
     // of the same line is kept in step.
     WCHAR* wide = GetCommandLineW();
+    const size_t originalWideLength = wcsnlen(commandLine.Buffer, length);
     const bool separateWideCopy = wide != commandLine.Buffer
-        && wcslen(wide) == (size_t)length
-        && wmemcmp(wide, commandLine.Buffer, length) == 0;
+        && wcslen(wide) == originalWideLength
+        && liveLength <= originalWideLength
+        && wmemcmp(wide, commandLine.Buffer, originalWideLength) == 0;
 
     wmemcpy(commandLine.Buffer, replacement.data(), length);
-    if (separateWideCopy)
-        wmemcpy(wide, replacement.data(), length);
-    WideCharToMultiByte(CP_ACP, 0, replacement.data(), length, ansi, ansiLength, nullptr, nullptr);
+    if (separateWideCopy) {
+        wmemcpy(wide, replacement.data(), liveLength);
+        SecureZeroMemory(wide + liveLength, (originalWideLength - liveLength + 1) * sizeof(WCHAR));
+    }
+    if (ansiLength > 0)
+        WideCharToMultiByte(CP_ACP, 0, replacement.data(), (int)liveLength,
+            ansi, ansiLength, nullptr, nullptr);
     // Zero through the original terminator, so no byte of a blanked value
     // survives past the new end of the line.
     SecureZeroMemory(ansi + ansiLength, originalAnsiLength - ansiLength + 1);

@@ -607,7 +607,7 @@ public final class ProfileScope implements AutoCloseable {
             return;
         }
 
-        // Tracy CPU zones must close in strict LIFO order. Some Minecraft/Fabric
+        // Tracy CPU zones must close in strict LIFO order. Some Minecraft/NeoForge
         // callbacks describe phase transitions rather than lexical scopes; if a
         // parent is asked to close while an injected child is still open, defer
         // only the Tracy end. JFR timing still records the true Java close time.

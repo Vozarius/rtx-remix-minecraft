@@ -38,7 +38,7 @@ class StageArtPackTests(unittest.TestCase):
         packs = next(
             line.removeprefix("resourcePacks:") for line in options.splitlines() if line.startswith("resourcePacks:")
         )
-        self.assertEqual(json.loads(packs), ["vanilla", "fabric", "file/world-demo-pbr", "file/rtx-tools-art"])
+        self.assertEqual(json.loads(packs), ["vanilla", "mod_resources", "file/world-demo-pbr", "file/rtx-tools-art"])
 
 
 if __name__ == "__main__":

@@ -17,9 +17,9 @@ class BuildConfigurationTests(unittest.TestCase):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
         wrapper = (REPO_ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties").read_text(encoding="utf-8")
 
-        loom = re.search(r"id 'fabric-loom' version '([^']+)'", build)
+        loom = re.search(r"id 'dev.architectury.loom' version '([^']+)'", build)
         if loom is None:
-            self.fail("Fabric Loom version declaration is missing")
+            self.fail("Architectury Loom version declaration is missing")
         self.assertNotIn("SNAPSHOT", loom.group(1).upper())
 
         checksum = re.search(r"(?m)^distributionSha256Sum=([0-9a-f]{64})$", wrapper)
@@ -184,14 +184,10 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("outputs.file(target)", build)
         self.assertIn("file('run/rtx.conf')", build)
 
-    def test_dev_instance_fabric_api_comes_from_the_pinned_dependency(self):
+    def test_neoforge_jar_converts_access_widener_to_access_transformer(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
-        task = re.search(r"(?ms)^tasks.register\('stageFabricApi', Copy\) \{(.+?)^\}", build)
-        self.assertIsNotNone(task)
-        assert task is not None
-        self.assertIn("into layout.buildDirectory.dir('dev')", task.group(1))
-        self.assertIn("rename { 'fabric-api.jar' }", task.group(1))
-        self.assertNotIn("The benchmark CLI passes", build)
+        self.assertIn("atAccessWideners.add('rtx-remix-renderer.accesswidener')", build)
+        self.assertNotIn("stageFabricApi", build)
 
 
 if __name__ == "__main__":

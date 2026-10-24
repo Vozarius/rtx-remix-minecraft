@@ -82,7 +82,7 @@ def game_jvm(instance: Path) -> str:
     data_dir = instance.parent.parent
     return (
         f'"C:/jdk/bin/javaw.exe" -Xmx12G -Djava.library.path={instance.as_posix()}/natives '
-        f"-cp {data_dir.as_posix()}/libraries/net/fabricmc/fabric-loader.jar org.prismlauncher.EntryPoint"
+        f"-cp {data_dir.as_posix()}/libraries/net/neoforged/neoforge.jar org.prismlauncher.EntryPoint"
     )
 
 
@@ -174,9 +174,6 @@ def fake_gradle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeGradle:
     project = tmp_path / "project"
     (project / "packaging").mkdir(parents=True)
     shutil.copy2(util.PROJECT_DIR / "packaging" / "installer.ps1", project / "packaging" / "installer.ps1")
-    jar = project / "build" / "dev" / "fabric-api.jar"
-    jar.parent.mkdir(parents=True)
-    jar.write_bytes(b"pinned fabric api")
     monkeypatch.setattr(util, "PROJECT_DIR", project)
     fake = FakeGradle()
 
@@ -850,14 +847,10 @@ def test_prism_game_ends_prism_when_the_jvm_cannot_be_ended(stop):
     assert events[0] == "prism kill"
 
 
-def test_prepare_installs_fabric_api_and_prunes_other_versions(launcher, fake_gradle, tmp_path):
-    stale = launcher.game_dir / "mods" / "fabric-api-0.1.jar"
-    stale.parent.mkdir(parents=True)
-    stale.write_bytes(b"x")
+def test_prepare_without_build_uses_the_existing_neoforge_jar(launcher, fake_gradle):
     launcher.prepare("win64", build=False)
-    assert fake_gradle.args[-2:] == ["stageFabricApi", "--quiet"]
-    assert not stale.exists()
-    assert (launcher.game_dir / "mods" / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar").exists()
+    assert fake_gradle.args == []
+    assert fake_gradle.installs == [(util.PROJECT_DIR, launcher.game_dir, "win64")]
 
 
 def test_prepare_builds_probes_then_installs_into_the_instance(launcher, fake_gradle, monkeypatch):
@@ -870,7 +863,6 @@ def test_prepare_builds_probes_then_installs_into_the_instance(launcher, fake_gr
         "build",
         "-x",
         "test",
-        "stageFabricApi",
         "-Parch=arm64",
         "--console=plain",
         "--quiet",
@@ -878,52 +870,12 @@ def test_prepare_builds_probes_then_installs_into_the_instance(launcher, fake_gr
     assert fake_gradle.cwd == project
     assert probes == [(project, "arm64")]
     assert fake_gradle.installs == [(project, launcher.game_dir, "arm64")]
-    installed = launcher.game_dir / "mods" / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar"
-    assert installed.read_bytes() == b"pinned fabric api"
 
 
 def test_prepare_blocks_when_the_install_fails(launcher, fake_gradle):
     fake_gradle.install_result = 1
     with pytest.raises(client.LaunchBlocked):
         launcher.prepare("win64", build=False)
-
-
-def test_prepare_without_the_staged_fabric_api_says_how_to_stage_it(launcher, fake_gradle):
-    (util.PROJECT_DIR / "build" / "dev" / "fabric-api.jar").unlink()
-    with pytest.raises(client.LaunchBlocked, match=r"Run gradlew\.bat stageFabricApi"):
-        launcher.prepare("win64", build=False)
-    assert fake_gradle.installs == []
-
-
-def test_prepare_blocks_naming_an_old_fabric_api_it_cannot_remove(launcher, fake_gradle, monkeypatch):
-    stale = launcher.game_dir / "mods" / "fabric-api-0.1.jar"
-    stale.parent.mkdir(parents=True)
-    stale.write_bytes(b"x")
-    refuse_unlink(monkeypatch, stale)
-    with pytest.raises(client.LaunchBlocked, match=re.escape(f"Cannot update {stale} (The file is in use")):
-        launcher.prepare("win64", build=False)
-    assert fake_gradle.installs == []
-
-
-def test_prepare_blocks_naming_a_fabric_api_it_cannot_write(launcher, fake_gradle, monkeypatch):
-    def fails(source, target):
-        # As shutil's CopyFile2 path raises it: no strerror.
-        raise OSError("CopyFile2 failed")
-
-    monkeypatch.setattr(shutil, "copy2", fails)
-    target = launcher.game_dir / "mods" / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar"
-    with pytest.raises(client.LaunchBlocked, match=re.escape(f"Cannot update {target} (CopyFile2 failed)")):
-        launcher.prepare("win64", build=False)
-    assert fake_gradle.installs == []
-
-
-def test_prepare_blocks_naming_a_mods_folder_it_cannot_make(launcher, fake_gradle):
-    mods = launcher.game_dir / "mods"
-    mods.parent.mkdir(parents=True)
-    mods.write_text("not a folder")
-    with pytest.raises(client.LaunchBlocked, match=re.escape(f"Cannot update {mods} (")):
-        launcher.prepare("win64", build=False)
-    assert fake_gradle.installs == []
 
 
 def test_log_files_are_the_game_log_and_crash_logs_written_since(launcher):

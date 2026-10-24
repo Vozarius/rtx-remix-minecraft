@@ -34,8 +34,8 @@ Quit closes at once, and a run given `-Mode` never waits.
 
 | Mode | What it does |
 |---|---|
-| Install | A fresh install, or a deliberate reinstall of the packaged files over an existing one. Sets up the launcher, the mod, and Fabric API. Baseline PBR textures are built into the JAR, and the mod unpacks its runtime textures on first launch. Safe to re-run: it does not wipe an already-extracted runtime or your conf payload |
-| Upgrade | Replaces the mod JAR and Fabric API. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher |
+| Install | A fresh install, or a deliberate reinstall of the packaged files over an existing one. Sets up the launcher, the mod, and NeoForge. Baseline PBR textures are built into the JAR, and the mod unpacks its runtime textures on first launch. Safe to re-run: it does not wipe an already-extracted runtime or your conf payload |
+| Upgrade | Replaces the mod JAR and NeoForge. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher |
 | Repair | Reinstalls the packaged files through the same path as Install and Upgrade. If the `.rtx-remix-version` marker matches, it does not re-extract the runtime or conf payload, but a missing `rtx.conf` is restored on launch. Delete the marker and relaunch to force full extraction |
 | Uninstall | Removes the mod files listed in `README.md`, then offers to remove the installer-managed Java, the Prism portable, and the Prism instance, listing only those that exist. With both launchers holding the mod it asks Prism, Microsoft, or Both |
 | Export | Prism only. Zips the Prism instance into an archive another machine can drop into its own Prism `instances\` folder, stripping the paths listed under Privacy below |
@@ -49,7 +49,7 @@ launcher.
 Install, Upgrade, and Repair migrate the retired generated `RtxRemix-LabPBR`
 pack. They identify it by metadata and texture inventory and leave other packs
 alone. In an existing `options.txt`, only `resourcePacks` changes: vanilla,
-Fabric, then user packs in their existing order, without the retired baseline
+NeoForge, then user packs in their existing order, without the retired baseline
 entry. They do not create a missing options file.
 
 ## JVM Arguments And Prism Memory
@@ -174,15 +174,15 @@ Get-Help .\installer.ps1 -Examples
 
 ## Java Resolution Order
 
-The installer needs a Java only to run the Fabric installer, and the game needs
+The installer needs a Java only to run the NeoForge installer, and the game needs
 one to run. Which it uses depends on the architecture and the launcher.
 
 - **x64 with Prism.** No Java step at all. Prism downloads Mojang's own Java on
   the first launch of the instance.
 - **x64 with the Microsoft launcher.** `java` on the PATH, then the managed JDK
   at `%LOCALAPPDATA%\RtxRemixMinecraft\jdk-21`, then a Java bundled with the
-  Microsoft launcher, then a downloaded Adoptium Temurin 21. Any version 8 or
-  newer runs the Fabric installer, so no architecture match is required. The
+  Microsoft launcher, then a downloaded Adoptium Temurin 21. Java 21
+  runs the NeoForge installer, so no architecture match is required. The
   game itself then runs on the launcher's own Java.
 - **ARM64.** `java` on the PATH only when it is version 21 and natively ARM64,
   then the managed JDK under the same test, then a downloaded Adoptium Temurin
@@ -195,7 +195,7 @@ one to run. Which it uses depends on the architecture and the launcher.
 
 Downloads are checked against a SHA-256 before use, using a checksum pinned by
 the installer or published by the dependency provider. This covers the JDK,
-Prism portable, Fabric installer, and Fabric API.
+Prism portable and the NeoForge installer.
 
 If neither source yields a hash, an unattended run refuses to continue. An
 interactive run asks if an offered checksum file is unreachable or malformed;

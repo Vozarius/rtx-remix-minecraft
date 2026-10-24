@@ -23,7 +23,7 @@ abstract class WallBlockMixin {
             boolean faceFullSquare,
             Direction side,
             CallbackInfoReturnable<Boolean> callback) {
-        if (state.isOf(CopperBeaconBlock.INSTANCE)) {
+        if (state.getBlock() instanceof CopperBeaconBlock) {
             callback.setReturnValue(
                     state.get(CopperBeaconBlock.MOUNT) == side.getOpposite());
         }
@@ -35,7 +35,7 @@ abstract class WallBlockMixin {
             BlockState aboveState,
             VoxelShape aboveShape,
             CallbackInfoReturnable<Boolean> callback) {
-        if (aboveState.isOf(CopperBeaconBlock.INSTANCE)) {
+        if (aboveState.getBlock() instanceof CopperBeaconBlock) {
             callback.setReturnValue(
                     aboveState.get(CopperBeaconBlock.MOUNT) == Direction.UP);
         }

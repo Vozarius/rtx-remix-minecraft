@@ -5,19 +5,20 @@
 package com.nvidia.rtxremix.minecraft.block;
 
 import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
+import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.registries.DeferredRegister;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.DyeItem;
 import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.ScreenHandlerType;
 import net.minecraft.screen.slot.Slot;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 
 /** Server-authoritative inventory and settings channel for one Copper Beacon. */
@@ -29,10 +30,12 @@ public final class CopperBeaconScreenHandler extends ScreenHandler {
     public static final int PLAYER_INVENTORY_X = 49;
     public static final int PLAYER_INVENTORY_Y = 153;
 
-    public static final ScreenHandlerType<CopperBeaconScreenHandler> TYPE =
-            new ExtendedScreenHandlerType<>(
-                    CopperBeaconScreenHandler::new,
-                    CopperBeaconScreenData.PACKET_CODEC);
+    private static final DeferredRegister<ScreenHandlerType<?>> MENUS = DeferredRegister.create(
+            RegistryKeys.SCREEN_HANDLER, RtxRemixCommonMod.MOD_ID);
+    public static final DeferredHolder<ScreenHandlerType<?>, ScreenHandlerType<CopperBeaconScreenHandler>> TYPE =
+            MENUS.register(CopperBeaconBlock.ID, () -> IMenuTypeExtension.create((syncId, inventory, buffer) ->
+                    new CopperBeaconScreenHandler(syncId, inventory,
+                            new CopperBeaconScreenData(buffer.readBlockPos()))));
 
     private static final int DYE_SLOT = 0;
     private static final int PLAYER_START = 1;
@@ -43,11 +46,8 @@ public final class CopperBeaconScreenHandler extends ScreenHandler {
     private final BlockPos pos;
     private final CopperBeaconBlockEntity beacon;
 
-    public static void register() {
-        Registry.register(
-                Registries.SCREEN_HANDLER,
-                Identifier.of(RtxRemixCommonMod.MOD_ID, CopperBeaconBlock.ID),
-                TYPE);
+    public static void register(IEventBus modBus) {
+        MENUS.register(modBus);
     }
 
     private CopperBeaconScreenHandler(
@@ -71,7 +71,7 @@ public final class CopperBeaconScreenHandler extends ScreenHandler {
             PlayerInventory playerInventory,
             CopperBeaconBlockEntity beacon,
             BlockPos pos) {
-        super(TYPE, syncId);
+        super(TYPE.get(), syncId);
         this.beacon = beacon;
         this.pos = pos.toImmutable();
         this.dyeInventory = beacon != null ? beacon : new SimpleInventory(1);

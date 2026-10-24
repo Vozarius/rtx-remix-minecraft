@@ -268,7 +268,7 @@ def resolve_selection(config: dict) -> runner.BenchmarkSelection:
 
 
 def enabled_pack_names(config: dict) -> list[str]:
-    names = ["fabric"]
+    names = ["mod_resources"]
     art = runner.configured_resource_pack(config)
     mode = str(art.get("mode") or "none").strip().lower()
     if mode == "pinned":

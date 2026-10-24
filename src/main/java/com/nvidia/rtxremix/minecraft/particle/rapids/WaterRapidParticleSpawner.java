@@ -5,8 +5,7 @@
 package com.nvidia.rtxremix.minecraft.particle.rapids;
 
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
-import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandler;
-import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandlerRegistry;
+import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.world.ClientWorld;
@@ -156,7 +155,7 @@ public final class WaterRapidParticleSpawner {
             vy = Math.min(vy, -VERTICAL_DOWNWARD_SPEED - random.nextDouble() * 0.12);
         }
 
-        Particle foam = addParticle(client, budget, RapidFoamParticles.RAPID_FOAM, spawnX, spawnY, spawnZ, vx, vy, vz);
+        Particle foam = addParticle(client, budget, RapidFoamParticles.RAPID_FOAM.get(), spawnX, spawnY, spawnZ, vx, vy, vz);
         tint(foam, color);
 
         int dotCount = falling ? 3 : 2;
@@ -164,7 +163,7 @@ public final class WaterRapidParticleSpawner {
             double dotX = spawnX + (random.nextDouble() - 0.5) * 0.18;
             double dotY = spawnY - 0.05 + random.nextDouble() * 0.16;
             double dotZ = spawnZ + (random.nextDouble() - 0.5) * 0.18;
-            Particle dot = addParticle(client, budget, RapidFoamParticles.RAPID_FOAM_DOT,
+            Particle dot = addParticle(client, budget, RapidFoamParticles.RAPID_FOAM_DOT.get(),
                     dotX, dotY, dotZ, vx * 0.85, vy * 0.9, vz * 0.85);
             tint(dot, color);
         }
@@ -233,7 +232,7 @@ public final class WaterRapidParticleSpawner {
         double vx = dirX * speed + sideX * (random.nextDouble() - 0.5) * 0.012;
         double vy = 0.018 + random.nextDouble() * 0.025;
         double vz = dirZ * speed + sideZ * (random.nextDouble() - 0.5) * 0.012;
-        addParticle(client, budget, RapidFoamParticles.RAPID_MIST, x, y, z, vx, vy, vz);
+        addParticle(client, budget, RapidFoamParticles.RAPID_MIST.get(), x, y, z, vx, vy, vz);
     }
 
     private static double spawnCoord(int blockCoord, double flowComponent, Random random) {
@@ -250,8 +249,8 @@ public final class WaterRapidParticleSpawner {
     }
 
     private static float[] foamColor(ClientWorld world, BlockPos pos, FluidState fluidState) {
-        FluidRenderHandler handler = FluidRenderHandlerRegistry.INSTANCE.get(fluidState.getFluid());
-        int color = handler != null ? handler.getFluidColor(world, pos, fluidState) : 0x3F76E4;
+        IClientFluidTypeExtensions handler = IClientFluidTypeExtensions.of(fluidState);
+        int color = handler != null ? handler.getTintColor(fluidState, world, pos) : 0x3F76E4;
         float r = ((color >> 16) & 0xFF) / 255.0f;
         float g = ((color >> 8) & 0xFF) / 255.0f;
         float b = (color & 0xFF) / 255.0f;

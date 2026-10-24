@@ -131,7 +131,7 @@ public final class DynamicTextureCache {
         GlyphPageMirror page = GLYPH_PAGES.get(id);
         return page == null
                 ? null
-                : new Pixels(page.data(), GlyphPageMirror.PAGE_SIZE, GlyphPageMirror.PAGE_SIZE,
+                : new Pixels(page.data(), page.width(), page.height(),
                         page.version());
     }
 

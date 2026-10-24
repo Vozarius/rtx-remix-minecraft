@@ -160,6 +160,7 @@ class ZonePersistentStateTest {
 
         ensureGameVersionForPersistentStateSave();
         state.save(file.toFile(), null);
+        net.neoforged.neoforge.common.IOUtilities.waitUntilIOWorkerComplete();
 
         assertFalse(state.isDirty());
         NbtCompound root = NbtIo.readCompressed(file, NbtSizeTracker.ofUnlimitedBytes());

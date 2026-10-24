@@ -13,7 +13,6 @@ import com.nvidia.rtxremix.minecraft.terrain.WorldRendererTerrainAccess;
 import com.nvidia.rtxremix.minecraft.terrain.NeighbourReflagFilter;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkBuilderBlockEntityAccess;
 import com.nvidia.rtxremix.minecraft.sky.WorldRendererStarAccess;
-import com.nvidia.rtxremix.minecraft.profiling.WorldRendererProfilingAccess;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.cloud.WorldRendererCloudAccess;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
@@ -33,6 +32,10 @@ import it.unimi.dsi.fastutil.objects.ObjectListIterator;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.particle.ParticleManager;
+import net.minecraft.client.particle.ParticleTextureSheet;
+import net.neoforged.neoforge.client.model.data.ModelData;
+import com.mojang.blaze3d.systems.RenderSystem;
+import java.util.function.Predicate;
 import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.BuiltChunkStorage;
 import net.minecraft.client.render.Camera;
@@ -100,7 +103,7 @@ import java.util.SortedSet;
  */
 @Mixin(WorldRenderer.class)
 public abstract class WorldRendererMixin
-        implements WorldRendererCloudAccess, WorldRendererProfilingAccess,
+        implements WorldRendererCloudAccess,
         WorldRendererStarAccess, WorldRendererTerrainAccess {
     private static final int rtxremix$BLOCK_ENTITY_CHUNK_LIST_INITIAL_CAPACITY = 32_768;
 
@@ -412,12 +415,13 @@ public abstract class WorldRendererMixin
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/block/BlockRenderManager;renderDamage("
+                    target = "Lnet/minecraft/client/render/block/BlockRenderManager;renderBreakingTexture("
                             + "Lnet/minecraft/block/BlockState;"
                             + "Lnet/minecraft/util/math/BlockPos;"
                             + "Lnet/minecraft/world/BlockRenderView;"
                             + "Lnet/minecraft/client/util/math/MatrixStack;"
-                            + "Lnet/minecraft/client/render/VertexConsumer;)V"
+                            + "Lnet/minecraft/client/render/VertexConsumer;"
+                            + "Lnet/neoforged/neoforge/client/model/data/ModelData;)V"
             ))
     private void rtxremix$captureBlockDamageInPlace(
             BlockRenderManager blockRenderManager,
@@ -426,15 +430,16 @@ public abstract class WorldRendererMixin
             BlockRenderView world,
             MatrixStack matrices,
             VertexConsumer vertexConsumer,
+            ModelData modelData,
             Operation<Void> original) {
         RtxRemixMod mod = RtxRemixMod.getInstance();
         RemixRenderer renderer = mod == null ? null : mod.getRenderer();
         boolean captured = renderer != null
                 && renderer.renderBlockDamageInPlace(pos, rtxremix$blockBreakingStage(pos),
                         (captureMatrices, captureConsumer) -> original.call(
-                                blockRenderManager, state, pos, world, captureMatrices, captureConsumer));
+                                blockRenderManager, state, pos, world, captureMatrices, captureConsumer, modelData));
         if (!captured) {
-            original.call(blockRenderManager, state, pos, world, matrices, vertexConsumer);
+            original.call(blockRenderManager, state, pos, world, matrices, vertexConsumer, modelData);
         }
     }
 
@@ -459,6 +464,7 @@ public abstract class WorldRendererMixin
             Matrix4f positionMatrix,
             Matrix4f projectionMatrix,
             CallbackInfo ci) {
+        RtxRemixMod.beginWorldRender();
         rtxremix$openJfrOnly(
                 rtxremix$renderScope,
                 "WorldRenderer.render",
@@ -486,6 +492,7 @@ public abstract class WorldRendererMixin
             CallbackInfo ci) {
         rtxremix$closeProfilerPhase();
         rtxremix$close(rtxremix$renderScope);
+        RtxRemixMod.endWorldRender();
     }
 
     @WrapOperation(
@@ -522,16 +529,25 @@ public abstract class WorldRendererMixin
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/particle/ParticleManager;renderParticles(Lnet/minecraft/client/render/LightmapTextureManager;Lnet/minecraft/client/render/Camera;F)V"
+                    target = "Lnet/minecraft/client/particle/ParticleManager;render(Lnet/minecraft/client/render/LightmapTextureManager;Lnet/minecraft/client/render/Camera;FLnet/minecraft/client/render/Frustum;Ljava/util/function/Predicate;)V"
             ))
     private void rtxremix$skipVanillaParticleDraw(
             ParticleManager particleManager,
             LightmapTextureManager lightmapTextureManager,
             Camera camera,
-            float tickDelta) {
+            float tickDelta,
+            Frustum frustum,
+            Predicate<ParticleTextureSheet> sheetFilter) {
         if (!RtxRemixMod.isRemixWorldRendering()) {
-            particleManager.renderParticles(lightmapTextureManager, camera, tickDelta);
+            particleManager.render(lightmapTextureManager, camera, tickDelta, frustum, sheetFilter);
+            return;
         }
+        lightmapTextureManager.enable();
+        RenderSystem.enableDepthTest();
+        RenderSystem.activeTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
+        lightmapTextureManager.disable();
     }
 
     @Inject(method = "renderClouds", at = @At("HEAD"), cancellable = true)
@@ -806,11 +822,6 @@ public abstract class WorldRendererMixin
         rtxremix$profilerPhaseScope = null;
         rtxremix$annotateProfilerPhase(scope);
         scope.close();
-    }
-
-    @Override
-    public void rtxremix$closeProfilerPhaseForFabricEvent() {
-        rtxremix$closeProfilerPhase();
     }
 
     private void rtxremix$annotateProfilerPhase(ProfileScope scope) {

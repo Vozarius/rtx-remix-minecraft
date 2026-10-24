@@ -124,7 +124,7 @@ def prism_form(jvm_args: str) -> str:
 
 RECOMMENDED = installer_literal("RECOMMENDED_JVM_ARGS")
 RECOMMENDED_FOR_PRISM = prism_form(RECOMMENDED)
-MS_PROFILE_KEY = f"fabric-loader-{installer_literal('MC_VERSION')}"
+MS_PROFILE_KEY = "NeoForge"
 
 
 def heap_mib(jvm_args: list[str]) -> int:
@@ -343,9 +343,9 @@ def sync_microsoft(tmp_path: Path) -> SyncMicrosoft:
         answer: str = "no",
         unattended: bool = False,
         next_jvm_args: str | None = None,
-        profile_name: str = "Fabric",
+        profile_name: str = "NeoForge",
     ) -> tuple[dict[str, Any], str]:
-        """The Fabric profile in launcher_profiles.json after the reconcile, from one whose javaArgs are `java_args`,
+        """The NeoForge profile in launcher_profiles.json after the reconcile, from one whose javaArgs are `java_args`,
         or that has none when it is None."""
         profile = {"lastVersionId": MS_PROFILE_KEY, "name": profile_name, "type": "custom"}
         if java_args is not None:

@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+modLoader="javafml"
+loaderVersion="[4,)"
+license="Apache-2.0"
+issueTrackerURL="https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/issues"
+
+[[mods]]
+modId="rtx_remix_renderer"
+version="${version}"
+displayName="RTX Remix for Minecraft"
+authors="NVIDIA"
+description='''Renders Minecraft through NVIDIA RTX Remix path tracing. NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.'''
+
+[[mixins]]
+config="rtx-remix-renderer.mixins.json"
+
+[[dependencies.rtx_remix_renderer]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.242,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.rtx_remix_renderer]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="BOTH"

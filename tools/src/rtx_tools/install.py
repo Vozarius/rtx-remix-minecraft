@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Install a built development mod into an existing Fabric game directory."""
+"""Install a built development mod into an existing NeoForge game directory."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
     """Stage built artifacts, returning 1 on missing prerequisites or a failed migration.
 
     Relative game and REMIX_BUILD paths are anchored at the checkout. This does
-    not build the mod, install Fabric, enable user packs, or launch the game.
+    not build the mod, install NeoForge, enable user packs, or launch the game.
     Filesystem failures propagate to the CLI's error handler.
     """
     selected_arch = arch or os.environ.get("REMIX_ARCH")
@@ -106,9 +106,6 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
         if previous.is_file():
             previous.unlink()
     shutil.copy2(mod_jar, mods / "rtx-remix-renderer.jar")
-    if not any(mods.glob("fabric-api-*.jar")):
-        print(f"WARNING: no fabric-api jar in {mods}.")
-        print("         The mod requires fabric-api >=0.116.10+1.21.1 (https://modrinth.com/mod/fabric-api).")
 
     _stage_runtime(source, bridge, game_dir / "remix-sdk", selected_arch)
     packaging = project_dir / "packaging"

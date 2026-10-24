@@ -9,6 +9,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror;
 import net.minecraft.client.font.GlyphAtlasTexture;
 import net.minecraft.client.font.RenderableGlyph;
+import net.minecraft.client.texture.NativeImage;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -33,12 +34,18 @@ public abstract class GlyphAtlasTextureMixin implements GlyphPageMirror.Owner {
 
     @Override
     public GlyphPageMirror rtxremix$glyphPageMirror() {
-        // Created on first use: hasColor is assigned by the constructor, so a field
-        // initialiser could not read it.
-        if (rtxremix$mirror == null) {
-            rtxremix$mirror = new GlyphPageMirror(!hasColor);
-        }
         return rtxremix$mirror;
+    }
+
+    @WrapOperation(
+        method = "<init>",
+        at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/platform/TextureUtil;prepareImage(Lnet/minecraft/client/texture/NativeImage$InternalFormat;III)V")
+    )
+    private void rtxremix$allocateMirror(NativeImage.InternalFormat format, int textureId,
+                                       int width, int height, Operation<Void> original) {
+        original.call(format, textureId, width, height);
+        // Capture the allocation arguments after atlas-resizing mods have adjusted them.
+        rtxremix$mirror = new GlyphPageMirror(width, height, !hasColor);
     }
 
     @WrapOperation(

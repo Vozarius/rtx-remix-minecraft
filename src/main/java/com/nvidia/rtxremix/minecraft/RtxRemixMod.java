@@ -20,7 +20,6 @@ import com.nvidia.rtxremix.minecraft.settings.RtxSettingsScreen;
 import com.nvidia.rtxremix.minecraft.settings.RtxSettingsFactory;
 import com.nvidia.rtxremix.minecraft.settings.RtxSettings;
 import com.nvidia.rtxremix.minecraft.screen.CopperBeaconScreen;
-import com.nvidia.rtxremix.minecraft.profiling.WorldRendererProfilingAccess;
 import com.nvidia.rtxremix.minecraft.profiling.TracyGCListener;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamParticles;
@@ -52,38 +51,34 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.nvidia.rtxremix.ErrorCode;
 import com.nvidia.rtxremix.RemixException;
 
-import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.longs.LongSets;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
-import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
-import net.fabricmc.fabric.api.client.screen.v1.Screens;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
-import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
-import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
+import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.RenderHighlightEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.resource.SynchronousResourceReloader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.option.OptionsScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
-import net.minecraft.client.gui.screen.ingame.HandledScreens;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.resource.ResourceType;
 import net.minecraft.screen.ScreenTexts;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.text.Text;
@@ -110,7 +105,9 @@ import java.util.function.ToIntBiFunction;
  * This mod submits Minecraft scene data to NVIDIA RTX Remix and displays the
  * path-traced result in-game.
  */
-public class RtxRemixMod implements ClientModInitializer {
+@net.neoforged.fml.common.Mod(value = RtxRemixCommonMod.LOADER_MOD_ID,
+        dist = net.neoforged.api.distmarker.Dist.CLIENT)
+public class RtxRemixMod {
     
     public static final Logger LOGGER = LoggerFactory.getLogger(RtxRemixMod.class);
 
@@ -198,11 +195,10 @@ public class RtxRemixMod implements ClientModInitializer {
         return REMIX_INPUT_GATE;
     }
 
-    /** Returns the version stamped into this mod's Fabric metadata. */
+    /** Returns the version stamped into this mod's metadata. */
     public static String getModVersion() {
-        return FabricLoader.getInstance()
-                .getModContainer(RtxRemixCommonMod.MOD_ID)
-                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+        return ModList.get().getModContainerById(RtxRemixCommonMod.LOADER_MOD_ID)
+                .map(container -> container.getModInfo().getVersion().toString())
                 .orElse("unknown");
     }
 
@@ -322,19 +318,28 @@ public class RtxRemixMod implements ClientModInitializer {
         return false;
     }
 
-    @Override
-    public void onInitializeClient() {
+    public RtxRemixMod(IEventBus modBus) {
         instance = this;
-        EntityModelLayerRegistry.registerModelLayer(
-                CopperBeaconBlockEntityRenderer.BODY_MODEL_LAYER,
-                CopperBeaconBlockEntityRenderer::getBodyTexturedModelData);
-        EntityModelLayerRegistry.registerModelLayer(
-                CopperBeaconBlockEntityRenderer.LENS_MODEL_LAYER,
-                CopperBeaconBlockEntityRenderer::getLensTexturedModelData);
-        BlockEntityRendererFactories.register(
-                CopperBeaconBlockEntity.TYPE, CopperBeaconBlockEntityRenderer::new);
-        HandledScreens.register(CopperBeaconScreenHandler.TYPE, CopperBeaconScreen::new);
-        RemixWeatherRenderer.registerShaders();
+        modBus.addListener((EntityRenderersEvent.RegisterLayerDefinitions event) -> {
+            event.registerLayerDefinition(CopperBeaconBlockEntityRenderer.BODY_MODEL_LAYER,
+                    CopperBeaconBlockEntityRenderer::getBodyTexturedModelData);
+            event.registerLayerDefinition(CopperBeaconBlockEntityRenderer.LENS_MODEL_LAYER,
+                    CopperBeaconBlockEntityRenderer::getLensTexturedModelData);
+        });
+        modBus.addListener((EntityRenderersEvent.RegisterRenderers event) ->
+                event.registerBlockEntityRenderer(CopperBeaconBlockEntity.TYPE.get(),
+                        CopperBeaconBlockEntityRenderer::new));
+        modBus.addListener((RegisterMenuScreensEvent event) ->
+                event.register(CopperBeaconScreenHandler.TYPE.get(), CopperBeaconScreen::new));
+        modBus.addListener(RemixWeatherRenderer::registerShaders);
+        modBus.addListener((net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent event) -> {
+            event.registerSpriteSet(RapidFoamParticles.RAPID_FOAM.get(),
+                    com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamParticle.Factory::new);
+            event.registerSpriteSet(RapidFoamParticles.RAPID_FOAM_DOT.get(),
+                    com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamDotParticle.Factory::new);
+            event.registerSpriteSet(RapidFoamParticles.RAPID_MIST.get(),
+                    com.nvidia.rtxremix.minecraft.particle.rapids.RapidMistParticle.Factory::new);
+        });
         LOGGER.info("========================================");
         LOGGER.info("RTX Remix Renderer v{} initializing...", getModVersion());
         LOGGER.info("========================================");
@@ -349,90 +354,95 @@ public class RtxRemixMod implements ClientModInitializer {
         remixAvailable = checkRemixAvailability();
         
         registerCommands();
-        // Particle types are a client-side registry, so they stay here. Blocks
-        // are synced and register in RtxRemixCommonMod instead.
-        RapidFoamParticles.register();
+        modBus.addListener((RegisterKeyMappingsEvent event) -> {
+            // G is unbound in vanilla 1.21.1 and unclaimed elsewhere in this mod, so
+            // this is a real registered binding rather than a raw GLFW intercept: it
+            // shows up in Options -> Controls and players can rebind it.
+            toggleHeldLightsKey = new KeyBinding(
+                    "key.rtxremix.toggleHeldLights",
+                    InputUtil.Type.KEYSYM,
+                    GLFW.GLFW_KEY_G,
+                    "category.rtxremix"
+            );
+            // F8 is unbound in vanilla 1.21.1 and sits away from the movement keys: a
+            // toggle that reloads the world renderer should not be a stray press away
+            // while playing. Same registered-binding treatment as the held-lights key.
+            toggleRtxKey = new KeyBinding(
+                    "key.rtxremix.toggleRtx",
+                    InputUtil.Type.KEYSYM,
+                    GLFW.GLFW_KEY_F8,
+                    "category.rtxremix"
+            );
 
-        // G is unbound in vanilla 1.21.1 and unclaimed elsewhere in this mod, so
-        // this is a real registered binding rather than a raw GLFW intercept: it
-        // shows up in Options -> Controls and players can rebind it.
-        toggleHeldLightsKey = KeyBindingHelper.registerKeyBinding(
-            new KeyBinding(
-                "key.rtxremix.toggleHeldLights",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_G,
-                "category.rtxremix"
-            )
-        );
-        // F8 is unbound in vanilla 1.21.1 and sits away from the movement keys: a
-        // toggle that reloads the world renderer should not be a stray press away
-        // while playing. Same registered-binding treatment as the held-lights key.
-        toggleRtxKey = KeyBindingHelper.registerKeyBinding(
-            new KeyBinding(
-                "key.rtxremix.toggleRtx",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_F8,
-                "category.rtxremix"
-            )
-        );
+            event.register(toggleHeldLightsKey);
+            event.register(toggleRtxKey);
+        });
+        NeoForge.EVENT_BUS.addListener((ScreenEvent.Init.Post event) -> {
+            MinecraftClient client = MinecraftClient.getInstance();
+            var screen = event.getScreen();
+            int scaledWidth = screen.width;
+            int scaledHeight = screen.height;
+            if (!(screen instanceof OptionsScreen)) {
+                return;
+            }
+            if (rtxSettings == null) {
+                return;
+            }
+            List<ClickableWidget> menuButtons = new ArrayList<>();
+            for (var listener : event.getListenersList()) {
+                if (listener instanceof ClickableWidget widget) menuButtons.add(widget);
+            }
+            Text settingsButtonText = Text.translatable("rtxremix.settings.button");
+            for (ClickableWidget widget : menuButtons) {
+                if (widget.getMessage().equals(settingsButtonText)) event.removeListener(widget);
+            }
+            menuButtons.removeIf(widget -> widget.getMessage().equals(settingsButtonText));
+            ClickableWidget done = null;
+            for (ClickableWidget w : menuButtons) {
+                if (w.getMessage().equals(ScreenTexts.DONE)) {
+                    done = w;
+                    break;
+                }
+            }
+            ButtonWidget button = ButtonWidget.builder(
+                            settingsButtonText,
+                            b -> client.setScreen(
+                                    new RtxSettingsScreen(
+                                            screen, rtxSettings, RtxRemixMod::saveRtxSettings)))
+                    .build();
+            if (done != null) {
+                int lastBodyY = Integer.MIN_VALUE;
+                for (ClickableWidget widget : menuButtons) {
+                    if (widget != done && widget.getY() < done.getY()) {
+                        lastBodyY = Math.max(lastBodyY, widget.getY());
+                    }
+                }
+                if (lastBodyY == Integer.MIN_VALUE) {
+                    lastBodyY = done.getY() - 24;
+                }
+                int buttonY = lastBodyY + 24;
+                int overflow = buttonY + 24 - done.getY();
+                if (overflow > 0) {
+                    int firstBodyY = lastBodyY - 96;
+                    for (ClickableWidget widget : menuButtons) {
+                        if (widget != done
+                                && widget.getY() >= firstBodyY
+                                && widget.getY() <= lastBodyY) {
+                            widget.setY(widget.getY() - overflow);
+                        }
+                    }
+                    buttonY -= overflow;
+                }
+                button.setDimensionsAndPosition(308, 20, scaledWidth / 2 - 154, buttonY);
+            } else {
+                button.setDimensionsAndPosition(
+                        200, 20, scaledWidth / 2 - 100, scaledHeight - 27);
+            }
+            event.addListener(button);
+        });
 
-        ScreenEvents.AFTER_INIT.register(
-                (client, screen, scaledWidth, scaledHeight) -> {
-                    if (!(screen instanceof OptionsScreen)) {
-                        return;
-                    }
-                    if (rtxSettings == null) {
-                        return;
-                    }
-                    List<ClickableWidget> menuButtons = Screens.getButtons(screen);
-                    Text settingsButtonText = Text.translatable("rtxremix.settings.button");
-                    menuButtons.removeIf(
-                            widget -> widget.getMessage().equals(settingsButtonText));
-                    ClickableWidget done = null;
-                    for (ClickableWidget w : menuButtons) {
-                        if (w.getMessage().equals(ScreenTexts.DONE)) {
-                            done = w;
-                            break;
-                        }
-                    }
-                    ButtonWidget button = ButtonWidget.builder(
-                                    settingsButtonText,
-                                    b -> client.setScreen(
-                                            new RtxSettingsScreen(
-                                                    screen, rtxSettings, RtxRemixMod::saveRtxSettings)))
-                            .build();
-                    if (done != null) {
-                        int lastBodyY = Integer.MIN_VALUE;
-                        for (ClickableWidget widget : menuButtons) {
-                            if (widget != done && widget.getY() < done.getY()) {
-                                lastBodyY = Math.max(lastBodyY, widget.getY());
-                            }
-                        }
-                        if (lastBodyY == Integer.MIN_VALUE) {
-                            lastBodyY = done.getY() - 24;
-                        }
-                        int buttonY = lastBodyY + 24;
-                        int overflow = buttonY + 24 - done.getY();
-                        if (overflow > 0) {
-                            int firstBodyY = lastBodyY - 96;
-                            for (ClickableWidget widget : menuButtons) {
-                                if (widget != done
-                                        && widget.getY() >= firstBodyY
-                                        && widget.getY() <= lastBodyY) {
-                                    widget.setY(widget.getY() - overflow);
-                                }
-                            }
-                            buttonY -= overflow;
-                        }
-                        button.setDimensionsAndPosition(308, 20, scaledWidth / 2 - 154, buttonY);
-                    } else {
-                        button.setDimensionsAndPosition(
-                                200, 20, scaledWidth / 2 - 100, scaledHeight - 27);
-                    }
-                    menuButtons.add(button);
-                });
-
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+        NeoForge.EVENT_BUS.addListener((ClientTickEvent.Post event) -> {
+            MinecraftClient client = MinecraftClient.getInstance();
             try (ProfileScope tickScope = ProfileScope.begin("ClientTick.END.heldLightsKeybind")) {
                 if (toggleHeldLightsKey == null) {
                     return;
@@ -462,7 +472,7 @@ public class RtxRemixMod implements ClientModInitializer {
                     toggleRtx();
                     if (client.player != null) {
                         client.player.sendMessage(
-                                Text.literal("RTX Rendering: " + (rtxEnabled ? "ON" : "OFF")), true);
+                                Text.literal(rtxRenderingStatus()), true);
                     }
                 }
             }
@@ -472,38 +482,14 @@ public class RtxRemixMod implements ClientModInitializer {
             LOGGER.warn("========================================");
             LOGGER.warn("RTX Remix SDK not found!");
             LOGGER.warn("Expected d3d9.dll at: {}",
-                    RemixRenderer.runtimeDll(FabricLoader.getInstance().getGameDir()));
+                    RemixRenderer.runtimeDll(FMLPaths.GAMEDIR.get()));
             LOGGER.warn("Mod will continue but rendering disabled.");
             LOGGER.warn("========================================");
         }
         
-        ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
-            LOGGER.info("Minecraft client started");
-            
-            textureOverlay = new TextureOverlay();
-            
-            if (remixAvailable) {
-                LOGGER.info("Initializing RTX Remix renderer...");
-                initializeRemix(client);
-                if (renderer != null && renderer.isInitialized()) {
-                    rtxSettings = RtxSettingsFactory.build(renderer);
-                    Path cfg = FabricLoader.getInstance()
-                            .getConfigDir().resolve("rtxremix.json");
-                    rtxSettingsStore = new RtxSettingsStore(cfg);
-                    rtxSettingsStore.load(rtxSettings);
-                    LOGGER.info("RTX settings loaded from {}", cfg);
-                    applyLaunchPreset();
-                }
-            } else {
-                LOGGER.warn("RTX Remix disabled - SDK not found");
-            }
-        });
-        
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
-            shutdownForClientStop();
-        });
-        
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+
+        NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingIn event) -> {
+            MinecraftClient client = MinecraftClient.getInstance();
             releaseRemixMenuCapture();
             if (renderer != null) {
                 ZoneRegistry zoneRegistry = renderer.getZoneRegistry();
@@ -516,7 +502,8 @@ public class RtxRemixMod implements ClientModInitializer {
             }
         });
 
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+        NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut event) -> {
+            MinecraftClient client = MinecraftClient.getInstance();
             LOGGER.info("Disconnected from world, clearing Remix resources...");
             releaseRemixMenuCapture();
             closeOpenProfileScopes();
@@ -536,7 +523,9 @@ public class RtxRemixMod implements ClientModInitializer {
             }
         });
 
-        ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) -> {
+        NeoForge.EVENT_BUS.addListener((ChunkEvent.Unload event) -> {
+            if (!(event.getLevel() instanceof net.minecraft.client.world.ClientWorld)) return;
+            var chunk = event.getChunk();
             ChunkPos pos = chunk.getPos();
             if (renderer != null && renderer.getChunkManager() != null) {
                 renderer.getChunkManager().onChunkUnloaded(pos);
@@ -548,81 +537,39 @@ public class RtxRemixMod implements ClientModInitializer {
 
         // Zone discovery: server-thread scan of command blocks as chunks load.
         // The event only fires in-process (integrated server = single player).
-        ServerChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
+        NeoForge.EVENT_BUS.addListener((ChunkEvent.Load event) -> {
+            if (!(event.getLevel() instanceof net.minecraft.server.world.ServerWorld world)
+                    || !(event.getChunk() instanceof net.minecraft.world.chunk.WorldChunk chunk)) return;
             if (renderer != null && MinecraftClient.getInstance().getServer() == world.getServer()) {
                 MarkerBlockScanner.scanChunk(renderer.getZoneRegistry(), chunk);
             }
         });
 
-        ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES)
-                .registerReloadListener(new SimpleSynchronousResourceReloadListener() {
-                    @Override
-                    public Identifier getFabricId() {
-                        return Identifier.of(RtxRemixCommonMod.MOD_ID, "atlas_reload");
-                    }
-                    @Override
-                    public void reload(ResourceManager manager) {
-                        BlockLightRuleManager.reload(manager);
-                        if (renderer != null) renderer.requestTextureReload();
-                    }
-                });
+        modBus.addListener((RegisterClientReloadListenersEvent event) ->
+                event.registerReloadListener((SynchronousResourceReloader) manager -> {
+                    BlockLightRuleManager.reload(manager);
+                    if (renderer != null) renderer.requestTextureReload();
+                }));
 
-        // Applies pending world and resource changes and preloads the large
-        // block-entity atlases before vanilla's world render, where block entities
-        // are captured in place by BlockEntityRenderDispatcherMixin.
-        WorldRenderEvents.START.register(context -> {
-            if (renderer != null && renderer.isInitialized()) {
-                renderer.beginBlockOutlineFrame();
-            }
-            if (isRendererProfilingActive()) {
-                try (ProfileScope startScope = ProfileScope.begin("WorldRender.START")) {
-                    renderer.beginWorldRenderFrame();
-                }
-                transitionWorldRenderPhase("WorldRender.vanilla.setup");
-            } else {
-                closeWorldRenderPhaseScope();
-            }
-        });
-
-        WorldRenderEvents.AFTER_SETUP.register(context ->
-            transitionWorldRenderPhase("WorldRender.vanilla.terrainOpaque"));
-        WorldRenderEvents.BEFORE_ENTITIES.register(context ->
-            transitionWorldRenderPhase("WorldRender.vanilla.entities"));
-        WorldRenderEvents.AFTER_ENTITIES.register(context ->
-            transitionWorldRenderPhase("WorldRender.vanilla.blockEntities"));
-        WorldRenderEvents.BEFORE_BLOCK_OUTLINE.register((context, hitResult) -> {
+        NeoForge.EVENT_BUS.addListener((RenderHighlightEvent.Block event) -> {
             transitionWorldRenderPhase("WorldRender.vanilla.blockOutline");
-            return true;
-        });
-        WorldRenderEvents.BLOCK_OUTLINE.register((context, outlineContext) -> {
-            if (renderer != null
-                    && renderer.isInitialized()
-                    && isRtxEnabled()) {
-                renderer.captureBlockOutline(context, outlineContext);
+            if (renderer != null && renderer.isInitialized() && isRtxEnabled()) {
+                renderer.captureBlockOutline(event);
             }
-            return true;
         });
-        WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context ->
-            transitionWorldRenderPhase("WorldRender.vanilla.debugAndTranslucent"));
-        WorldRenderEvents.AFTER_TRANSLUCENT.register(context ->
-            transitionWorldRenderPhase("WorldRender.vanilla.weatherClouds"));
-        WorldRenderEvents.LAST.register(context -> {
-            transitionWorldRenderPhase("WorldRender.vanilla.last");
-            closeWorldRendererProfilerPhase(context);
-        });
-
-        // WorldRenderer returns to GameRenderer before Minecraft draws the
-        // first-person arms/items. Mark the scene ready here, then submit it
-        // from GameRendererMixin after that model has been captured and before
-        // Minecraft draws its screen overlays.
-        WorldRenderEvents.END.register(context -> {
-            closeWorldRendererProfilerPhase(context);
-            closeWorldRenderPhaseScope();
-            ProfileScope.markWorldRenderEnd();
-            remixFrameReadyToSubmit = renderer != null && renderer.isInitialized();
+        NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent event) -> {
+            var stage = event.getStage();
+            if (stage == RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
+                transitionWorldRenderPhase("WorldRender.vanilla.blockEntities");
+            } else if (stage == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
+                transitionWorldRenderPhase("WorldRender.vanilla.blockOutline");
+            } else if (stage == RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
+                transitionWorldRenderPhase("WorldRender.vanilla.weatherClouds");
+            }
         });
 
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+        NeoForge.EVENT_BUS.addListener((ClientTickEvent.Post event) -> {
+            MinecraftClient client = MinecraftClient.getInstance();
             try (ProfileScope tickScope = ProfileScope.begin("ClientTick.END.benchmark")) {
                 if (renderer != null) {
                     renderer.getCameraController().onClientTick(client);
@@ -725,9 +672,50 @@ public class RtxRemixMod implements ClientModInitializer {
         }
     }
 
-    private static void closeWorldRendererProfilerPhase(WorldRenderContext context) {
-        if (context != null && context.worldRenderer() instanceof WorldRendererProfilingAccess access) {
-            access.rtxremix$closeProfilerPhaseForFabricEvent();
+    /** Starts a frame before vanilla sets up terrain. Called on the render thread. */
+    public static void beginWorldRender() {
+        if (instance == null) return;
+        if (renderer != null && renderer.isInitialized()) renderer.beginBlockOutlineFrame();
+        if (instance.isRendererProfilingActive()) {
+            try (ProfileScope scope = ProfileScope.begin("WorldRender.START")) {
+                renderer.beginWorldRenderFrame();
+            }
+            instance.transitionWorldRenderPhase("WorldRender.vanilla.setup");
+        } else {
+            instance.closeWorldRenderPhaseScope();
+        }
+    }
+
+    /** Marks the captured scene ready, before first-person geometry is captured. */
+    public static void endWorldRender() {
+        if (instance == null) return;
+        instance.closeWorldRenderPhaseScope();
+        ProfileScope.markWorldRenderEnd();
+        instance.remixFrameReadyToSubmit = renderer != null && renderer.isInitialized();
+    }
+
+    public static void onClientStarted() {
+        if (instance != null) instance.startRenderer(MinecraftClient.getInstance());
+    }
+
+    private void startRenderer(MinecraftClient client) {
+        LOGGER.info("Minecraft client started");
+
+        textureOverlay = new TextureOverlay();
+
+        if (remixAvailable) {
+            LOGGER.info("Initializing RTX Remix renderer...");
+            initializeRemix(client);
+            if (renderer != null && renderer.isInitialized()) {
+                rtxSettings = RtxSettingsFactory.build(renderer);
+                Path cfg = FMLPaths.CONFIGDIR.get().resolve("rtxremix.json");
+                rtxSettingsStore = new RtxSettingsStore(cfg);
+                rtxSettingsStore.load(rtxSettings);
+                LOGGER.info("RTX settings loaded from {}", cfg);
+                applyLaunchPreset();
+            }
+        } else {
+            LOGGER.warn("RTX Remix disabled - SDK not found");
         }
     }
 
@@ -736,7 +724,7 @@ public class RtxRemixMod implements ClientModInitializer {
     }
 
     private boolean checkRemixAvailability() {
-        Path dll = RemixRenderer.runtimeDll(FabricLoader.getInstance().getGameDir());
+        Path dll = RemixRenderer.runtimeDll(FMLPaths.GAMEDIR.get());
         if (!Files.isRegularFile(dll)) {
             return false;
         }
@@ -744,174 +732,180 @@ public class RtxRemixMod implements ClientModInitializer {
         return true;
     }
     
+    private static void sendClientFeedback(ServerCommandSource source, Text message) {
+        source.sendFeedback(() -> message, false);
+    }
+
     private void registerCommands() {
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            dispatcher.register(ClientCommandManager.literal("rtx")
+        NeoForge.EVENT_BUS.addListener((RegisterClientCommandsEvent event) -> {
+            var dispatcher = event.getDispatcher();
+            var registryAccess = event.getBuildContext();
+            dispatcher.register(CommandManager.literal("rtx")
                 .executes(context -> {
                     toggleRtx();
-                    context.getSource().sendFeedback(Text.literal("RTX Rendering: " + (rtxEnabled ? "ON" : "OFF")));
+                    sendClientFeedback(context.getSource(), Text.literal(rtxRenderingStatus()));
                     return 1;
                 })
-                .then(ClientCommandManager.literal("on")
+                .then(CommandManager.literal("on")
                     .executes(context -> {
                         setRtxEnabled(true);
-                        context.getSource().sendFeedback(Text.literal("RTX Rendering: ON"));
+                        sendClientFeedback(context.getSource(), Text.literal(rtxRenderingStatus()));
                         return 1;
                     }))
-                .then(ClientCommandManager.literal("off")
+                .then(CommandManager.literal("off")
                     .executes(context -> {
                         setRtxEnabled(false);
-                        context.getSource().sendFeedback(Text.literal("RTX Rendering: OFF"));
+                        sendClientFeedback(context.getSource(), Text.literal(rtxRenderingStatus()));
                         return 1;
                     }))
-                .then(ClientCommandManager.literal("status")
+                .then(CommandManager.literal("status")
                     .executes(context -> {
-                        context.getSource().sendFeedback(Text.literal("RTX Status:"));
-                        context.getSource().sendFeedback(Text.literal("  Enabled (master): " + rtxEnabled));
-                        context.getSource().sendFeedback(Text.literal(
+                        sendClientFeedback(context.getSource(), Text.literal("RTX Status:"));
+                        sendClientFeedback(context.getSource(), Text.literal("  Enabled (master): " + rtxEnabled));
+                        sendClientFeedback(context.getSource(), Text.literal(
                                 "  World: " + worldEnabled + " (active " + isWorldActive() + ")"
                                 + ", Entities: " + entitiesEnabled + " (active " + isEntitiesActive() + ")"
                                 + ", BlockEntities: " + blockEntitiesEnabled + " (active " + isBlockEntitiesActive() + ")"
                                 + ", Particles: " + particlesEnabled + " (active " + isParticlesActive() + ")"
                                 + ", Sky: " + skyEnabled + " (active " + isSkyActive() + ")"));
-                        context.getSource().sendFeedback(Text.literal("  Sky Dome: " + SkyRenderer.isEnabled() + ", Sky Ambient Rect: " + SkyRenderer.isSkyAmbientRectEnabled()));
-                        context.getSource().sendFeedback(Text.literal(
+                        sendClientFeedback(context.getSource(), Text.literal("  Sky Dome: " + SkyRenderer.isEnabled() + ", Sky Ambient Rect: " + SkyRenderer.isSkyAmbientRectEnabled()));
+                        sendClientFeedback(context.getSource(), Text.literal(
                                 "  Held Lights: " + (HeldLightState.isLocalHeldLightsOff() ? "OFF" : "ON")
                                 + ", Held Flames Under Water: "
                                 + (HeldLightState.areFlamesAllowedUnderwater() ? "ALLOWED" : "EXTINGUISHED")));
-                        context.getSource().sendFeedback(Text.literal(
+                        sendClientFeedback(context.getSource(), Text.literal(
                                 "  Renderer Initialized: " + (renderer != null && renderer.isInitialized())));
-                        context.getSource().sendFeedback(Text.literal("  SDK Available: " + remixAvailable));
+                        sendClientFeedback(context.getSource(), Text.literal("  SDK Available: " + remixAvailable));
                         if (renderer != null && renderer.getChunkManager() != null) {
                             ChunkManager cm = renderer.getChunkManager();
-                            context.getSource().sendFeedback(Text.literal("  Loaded Chunks: " + cm.getLoadedChunkCount()));
-                            context.getSource().sendFeedback(Text.literal("  Retained Pages: " + cm.getTerrainDiagnostics().retainedPages()));
+                            sendClientFeedback(context.getSource(), Text.literal("  Loaded Chunks: " + cm.getLoadedChunkCount()));
+                            sendClientFeedback(context.getSource(), Text.literal("  Retained Pages: " + cm.getTerrainDiagnostics().retainedPages()));
                         }
                         if (renderer != null && renderer.getEntityPass() != null) {
-                            context.getSource().sendFeedback(Text.literal("  Entity Cull Distance: "
+                            sendClientFeedback(context.getSource(), Text.literal("  Entity Cull Distance: "
                                     + renderer.getEntityPass().getEntityCullDistance() + " chunks"));
                         }
                         if (renderer != null && renderer.getChunkManager() != null) {
-                            context.getSource().sendFeedback(Text.literal("  Light Cull Distance: "
+                            sendClientFeedback(context.getSource(), Text.literal("  Light Cull Distance: "
                                     + renderer.getChunkManager().getLightCullDistance() + " chunks"
                                     + (renderer.getChunkManager().getLightCullDistance() == 0 ? " (view distance)" : "")));
-                            context.getSource().sendFeedback(Text.literal("  Light Reach: "
+                            sendClientFeedback(context.getSource(), Text.literal("  Light Reach: "
                                     + renderer.getChunkManager().getLightReach() + " blocks"));
                         }
                         if (renderer != null && renderer.getLightManager() != null) {
-                            context.getSource().sendFeedback(Text.literal("  Active Lights: " + renderer.getLightManager().getLightCount()));
+                            sendClientFeedback(context.getSource(), Text.literal("  Active Lights: " + renderer.getLightManager().getLightCount()));
                         }
                         if (renderer != null) {
-                            context.getSource().sendFeedback(Text.literal("  View Distance Fade: " + renderer.getViewDistanceFade().describe()));
+                            sendClientFeedback(context.getSource(), Text.literal("  View Distance Fade: " + renderer.getViewDistanceFade().describe()));
                         }
                         return 1;
                     }))
-                .then(ClientCommandManager.literal("entities")
+                .then(CommandManager.literal("entities")
                     .executes(context -> {
                         entitiesEnabled = !entitiesEnabled;
-                        context.getSource().sendFeedback(Text.literal("Entity Rendering: " + (entitiesEnabled ? "ON" : "OFF")));
+                        sendClientFeedback(context.getSource(), Text.literal("Entity Rendering: " + (entitiesEnabled ? "ON" : "OFF")));
                         return 1;
                     }))
                 // /rtx blockentities - toggle block entity rendering (chests, furnaces, signs, etc.)
-                .then(ClientCommandManager.literal("blockentities")
+                .then(CommandManager.literal("blockentities")
                     .executes(context -> {
                         blockEntitiesEnabled = !blockEntitiesEnabled;
-                        context.getSource().sendFeedback(Text.literal("Block Entity Rendering: " + (blockEntitiesEnabled ? "ON" : "OFF")));
+                        sendClientFeedback(context.getSource(), Text.literal("Block Entity Rendering: " + (blockEntitiesEnabled ? "ON" : "OFF")));
                         return 1;
                     }))
-                .then(ClientCommandManager.literal("particles")
+                .then(CommandManager.literal("particles")
                     .executes(context -> {
                         particlesEnabled = !particlesEnabled;
-                        context.getSource().sendFeedback(Text.literal("Particle Rendering: " + (particlesEnabled ? "ON" : "OFF")));
+                        sendClientFeedback(context.getSource(), Text.literal("Particle Rendering: " + (particlesEnabled ? "ON" : "OFF")));
                         return 1;
                     }))
                 // /rtx heldlights - put the local player's held lights out or relight
                 // them, as the Toggle Held Lights key does; /rtx heldlights underwater
                 // lets open flames keep burning under water.
-                .then(ClientCommandManager.literal("heldlights")
+                .then(CommandManager.literal("heldlights")
                     .executes(context -> {
                         boolean off = HeldLightState.toggleLocalHeldLights();
-                        context.getSource().sendFeedback(Text.literal("Held lights: " + (off ? "OFF" : "ON")));
+                        sendClientFeedback(context.getSource(), Text.literal("Held lights: " + (off ? "OFF" : "ON")));
                         return 1;
                     })
-                    .then(ClientCommandManager.literal("underwater")
+                    .then(CommandManager.literal("underwater")
                         .executes(context -> {
                             boolean allowed = !HeldLightState.areFlamesAllowedUnderwater();
                             HeldLightState.setFlamesAllowedUnderwater(allowed);
-                            context.getSource().sendFeedback(Text.literal(
+                            sendClientFeedback(context.getSource(), Text.literal(
                                     "Held flames under water: " + (allowed ? "ALLOWED" : "EXTINGUISHED")));
                             return 1;
                         })))
                 // /rtx world - toggle world rendering
-                .then(ClientCommandManager.literal("world")
+                .then(CommandManager.literal("world")
                     .executes(context -> {
                         worldEnabled = !worldEnabled;
-                        context.getSource().sendFeedback(Text.literal("World Rendering: " + (worldEnabled ? "ON" : "OFF")));
+                        sendClientFeedback(context.getSource(), Text.literal("World Rendering: " + (worldEnabled ? "ON" : "OFF")));
                         return 1;
                     }))
-                .then(ClientCommandManager.literal("skyDomeMult")
+                .then(CommandManager.literal("skyDomeMult")
                     .executes(context -> {
-                        context.getSource().sendFeedback(Text.literal(
+                        sendClientFeedback(context.getSource(), Text.literal(
                                 "Sky dome multiplier: " + SkyRenderer.getSkyDomeMultiplier()));
                         return 1;
                     })
-                    .then(ClientCommandManager.argument("value",
+                    .then(CommandManager.argument("value",
                             FloatArgumentType.floatArg(0.0f))
                         .executes(context -> {
                             float v = FloatArgumentType.getFloat(context, "value");
                             SkyRenderer.setSkyDomeMultiplier(v);
-                            context.getSource().sendFeedback(Text.literal("Sky dome multiplier: " + v));
+                            sendClientFeedback(context.getSource(), Text.literal("Sky dome multiplier: " + v));
                             return 1;
                         })))
-                .then(ClientCommandManager.literal("sky")
+                .then(CommandManager.literal("sky")
                     .executes(context -> {
                         setSkyEnabled(!isSkyEnabled());
-                        context.getSource().sendFeedback(Text.literal("Sky Rendering: " + (skyEnabled ? "ON" : "OFF")));
+                        sendClientFeedback(context.getSource(), Text.literal("Sky Rendering: " + (skyEnabled ? "ON" : "OFF")));
                         return 1;
                     })
-                    .then(ClientCommandManager.literal("ambient")
+                    .then(CommandManager.literal("ambient")
                         .executes(context -> {
                             SkyRenderer.setSkyAmbientRectEnabled(!SkyRenderer.isSkyAmbientRectEnabled());
                             boolean on = SkyRenderer.isSkyAmbientRectEnabled();
-                            context.getSource().sendFeedback(Text.literal("Sky Ambient Rect: " + (on ? "ON" : "OFF")));
+                            sendClientFeedback(context.getSource(), Text.literal("Sky Ambient Rect: " + (on ? "ON" : "OFF")));
                             return 1;
                         })
-                        .then(ClientCommandManager.literal("night")
+                        .then(CommandManager.literal("night")
                             .executes(context -> {
-                                context.getSource().sendFeedback(Text.literal("Night sky ambient boost: " + SkyRenderer.getNightAmbientBoost()));
+                                sendClientFeedback(context.getSource(), Text.literal("Night sky ambient boost: " + SkyRenderer.getNightAmbientBoost()));
                                 return 1;
                             })
-                            .then(ClientCommandManager.argument("value",
+                            .then(CommandManager.argument("value",
                                     FloatArgumentType.floatArg(0.0f, 10.0f))
                                 .executes(context -> {
                                     float v = FloatArgumentType.getFloat(context, "value");
                                     SkyRenderer.setNightAmbientBoost(v);
                                     if (renderer != null && renderer.getSkyRenderer() != null)
                                         renderer.getSkyRenderer().forceRefresh();
-                                    context.getSource().sendFeedback(Text.literal("Night sky ambient boost: " + v));
+                                    sendClientFeedback(context.getSource(), Text.literal("Night sky ambient boost: " + v));
                                     return 1;
                                 })))
-                        .then(ClientCommandManager.literal("day")
+                        .then(CommandManager.literal("day")
                             .executes(context -> {
-                                context.getSource().sendFeedback(Text.literal("Day sky ambient boost: " + SkyRenderer.getDayAmbientBoost()));
+                                sendClientFeedback(context.getSource(), Text.literal("Day sky ambient boost: " + SkyRenderer.getDayAmbientBoost()));
                                 return 1;
                             })
-                            .then(ClientCommandManager.argument("value",
+                            .then(CommandManager.argument("value",
                                     FloatArgumentType.floatArg(0.0f, 5.0f))
                                 .executes(context -> {
                                     float v = FloatArgumentType.getFloat(context, "value");
                                     SkyRenderer.setDayAmbientBoost(v);
                                     if (renderer != null && renderer.getSkyRenderer() != null)
                                         renderer.getSkyRenderer().forceRefresh();
-                                    context.getSource().sendFeedback(Text.literal("Day sky ambient boost: " + v));
+                                    sendClientFeedback(context.getSource(), Text.literal("Day sky ambient boost: " + v));
                                     return 1;
                                 }))))
-                    .then(ClientCommandManager.literal("minimumopacity")
+                    .then(CommandManager.literal("minimumopacity")
                         .executes(context -> {
-                            context.getSource().sendFeedback(Text.literal("Minimum celestial weather visibility: " + SkyRenderer.getMinimumCelestialWeatherVisibility()));
+                            sendClientFeedback(context.getSource(), Text.literal("Minimum celestial weather visibility: " + SkyRenderer.getMinimumCelestialWeatherVisibility()));
                             return 1;
                         })
-                        .then(ClientCommandManager.argument("value",
+                        .then(CommandManager.argument("value",
                                 FloatArgumentType.floatArg(0.0f, 1.0f))
                             .executes(context -> {
                                 float v = FloatArgumentType.getFloat(context, "value");
@@ -919,100 +913,100 @@ public class RtxRemixMod implements ClientModInitializer {
                                 if (renderer != null && renderer.getSkyRenderer() != null)
                                     renderer.getSkyRenderer().forceRefresh();
                                 saveRtxSettings();
-                                context.getSource().sendFeedback(
+                                sendClientFeedback(context.getSource(),
                                         Text.literal("Minimum celestial weather visibility: " + v));
                                 return 1;
                             })))
-                    .then(ClientCommandManager.literal("sun")
+                    .then(CommandManager.literal("sun")
                         .executes(context -> {
-                            context.getSource().sendFeedback(Text.literal("Sun intensity: " + LightManager.getSunIntensity()));
+                            sendClientFeedback(context.getSource(), Text.literal("Sun intensity: " + LightManager.getSunIntensity()));
                             return 1;
                         })
-                        .then(ClientCommandManager.argument("value",
+                        .then(CommandManager.argument("value",
                                 FloatArgumentType.floatArg(0.0f, 100.0f))
                             .executes(context -> {
                                 float v = FloatArgumentType.getFloat(context, "value");
                                 LightManager.setSunIntensity(v);
                                 if (renderer != null && renderer.getSkyRenderer() != null)
                                     renderer.getSkyRenderer().forceRefresh();
-                                context.getSource().sendFeedback(Text.literal("Sun intensity: " + v));
+                                sendClientFeedback(context.getSource(), Text.literal("Sun intensity: " + v));
                                 return 1;
                             })))
-                    .then(ClientCommandManager.literal("moon")
+                    .then(CommandManager.literal("moon")
                         .executes(context -> {
-                            context.getSource().sendFeedback(Text.literal("Moon intensity: " + LightManager.getMoonIntensity()));
+                            sendClientFeedback(context.getSource(), Text.literal("Moon intensity: " + LightManager.getMoonIntensity()));
                             return 1;
                         })
-                        .then(ClientCommandManager.argument("value",
+                        .then(CommandManager.argument("value",
                                 FloatArgumentType.floatArg(0.0f, 10.0f))
                             .executes(context -> {
                                 float v = FloatArgumentType.getFloat(context, "value");
                                 LightManager.setMoonIntensity(v);
                                 if (renderer != null && renderer.getSkyRenderer() != null)
                                     renderer.getSkyRenderer().forceRefresh();
-                                context.getSource().sendFeedback(Text.literal("Moon intensity: " + v));
+                                sendClientFeedback(context.getSource(), Text.literal("Moon intensity: " + v));
                                 return 1;
                             }))))
-                .then(ClientCommandManager.literal("culldistance")
+                .then(CommandManager.literal("culldistance")
                     .executes(context -> {
                         if (renderer != null && renderer.getChunkManager() != null) {
                             int light = renderer.getChunkManager().getLightCullDistance();
-                            context.getSource().sendFeedback(Text.literal("Light cull distance: " + light + " chunks" + (light == 0 ? " (view distance)" : "")));
+                            sendClientFeedback(context.getSource(), Text.literal("Light cull distance: " + light + " chunks" + (light == 0 ? " (view distance)" : "")));
                             if (renderer.getEntityPass() != null) {
                                 int entity = renderer.getEntityPass().getEntityCullDistance();
-                                context.getSource().sendFeedback(Text.literal("Entity cull distance: " + entity + " chunks" + (entity == 0 ? " (view distance)" : "")));
+                                sendClientFeedback(context.getSource(), Text.literal("Entity cull distance: " + entity + " chunks" + (entity == 0 ? " (view distance)" : "")));
                             }
-                            context.getSource().sendFeedback(Text.literal("Light reach: "
+                            sendClientFeedback(context.getSource(), Text.literal("Light reach: "
                                     + renderer.getChunkManager().getLightReach() + " blocks (torch cutoff)"));
                         } else {
-                            context.getSource().sendFeedback(Text.literal("Chunk manager not available"));
+                            sendClientFeedback(context.getSource(), Text.literal("Chunk manager not available"));
                         }
                         return 1;
                     })
-                    .then(ClientCommandManager.literal("light")
-                        .then(ClientCommandManager.argument("chunks",
+                    .then(CommandManager.literal("light")
+                        .then(CommandManager.argument("chunks",
                                 IntegerArgumentType.integer(0, 32))
                             .executes(context -> {
                                 int n = IntegerArgumentType.getInteger(context, "chunks");
                                 if (renderer != null && renderer.getChunkManager() != null) {
                                     renderer.getChunkManager().setLightCullDistance(n);
-                                    context.getSource().sendFeedback(Text.literal("Light cull distance set to " + n + " chunks" + (n == 0 ? " (view distance)" : "")));
+                                    sendClientFeedback(context.getSource(), Text.literal("Light cull distance set to " + n + " chunks" + (n == 0 ? " (view distance)" : "")));
                                 } else {
-                                    context.getSource().sendFeedback(Text.literal("Chunk manager not available"));
+                                    sendClientFeedback(context.getSource(), Text.literal("Chunk manager not available"));
                                 }
                                 return 1;
                             })))
-                    .then(ClientCommandManager.literal("entity")
-                        .then(ClientCommandManager.argument("chunks",
+                    .then(CommandManager.literal("entity")
+                        .then(CommandManager.argument("chunks",
                                 IntegerArgumentType.integer(0, 32))
                             .executes(context -> {
                                 int n = IntegerArgumentType.getInteger(context, "chunks");
                                 if (renderer != null && renderer.getEntityPass() != null) {
                                     renderer.getEntityPass().setEntityCullDistance(n);
-                                    context.getSource().sendFeedback(Text.literal("Entity cull distance set to " + n + " chunks" + (n == 0 ? " (view distance)" : "")));
+                                    sendClientFeedback(context.getSource(), Text.literal("Entity cull distance set to " + n + " chunks" + (n == 0 ? " (view distance)" : "")));
                                 } else {
-                                    context.getSource().sendFeedback(Text.literal("Entity renderer not available"));
+                                    sendClientFeedback(context.getSource(), Text.literal("Entity renderer not available"));
                                 }
                                 return 1;
                             })))
-                    .then(ClientCommandManager.literal("reach")
-                        .then(ClientCommandManager.argument("blocks",
+                    .then(CommandManager.literal("reach")
+                        .then(CommandManager.argument("blocks",
                                 IntegerArgumentType.integer(
                                         ChunkManager.MIN_LIGHT_REACH_BLOCKS, ChunkManager.MAX_LIGHT_REACH_BLOCKS))
                             .executes(context -> {
                                 int n = IntegerArgumentType.getInteger(context, "blocks");
                                 if (renderer != null && renderer.getChunkManager() != null) {
                                     renderer.getChunkManager().setLightReach(n);
-                                    context.getSource().sendFeedback(Text.literal("Light reach set to " + n + " blocks"));
+                                    sendClientFeedback(context.getSource(), Text.literal("Light reach set to " + n + " blocks"));
                                 } else {
-                                    context.getSource().sendFeedback(Text.literal("Chunk manager not available"));
+                                    sendClientFeedback(context.getSource(), Text.literal("Chunk manager not available"));
                                 }
                                 return 1;
                             }))))
-                .then(ClientCommandManager.literal("lights")
+                .then(CommandManager.literal("lights")
                     .executes(context -> {
                         if (renderer == null || renderer.getChunkManager() == null) {
-                            context.getSource().sendFeedback(Text.literal("Chunk manager not available"));
+                            sendClientFeedback(context.getSource(), Text.literal("Chunk manager not available"));
                             return 1;
                         }
                         List<ChunkManager.LightRuleStats> stats =
@@ -1022,22 +1016,22 @@ public class RtxRemixMod implements ClientModInitializer {
                             total += s.total();
                             drawn += s.drawn();
                         }
-                        context.getSource().sendFeedback(Text.literal(
+                        sendClientFeedback(context.getSource(), Text.literal(
                                 "Terrain lights: " + drawn + " drawn of " + total));
                         for (ChunkManager.LightRuleStats s : stats) {
-                            context.getSource().sendFeedback(Text.literal(
+                            sendClientFeedback(context.getSource(), Text.literal(
                                     "  " + s.ruleId().getPath() + ": " + s.drawn() + " / " + s.total()));
                         }
                         return 1;
                     }))
-                .then(ClientCommandManager.literal("preset")
+                .then(CommandManager.literal("preset")
                     .executes(context -> {
-                        context.getSource().sendFeedback(Text.literal(
+                        sendClientFeedback(context.getSource(), Text.literal(
                                 "Presets: " + String.join(", ", QualityPreset.ids())
                                         + ". A preset sets Remix's graphics tier for this session."));
                         return 1;
                     })
-                    .then(ClientCommandManager.argument("name",
+                    .then(CommandManager.argument("name",
                             StringArgumentType.word())
                         .suggests((context, builder) -> {
                             for (String name : QualityPreset.ids()) {
@@ -1048,56 +1042,56 @@ public class RtxRemixMod implements ClientModInitializer {
                         .executes(context -> {
                             String name = StringArgumentType
                                     .getString(context, "name");
-                            context.getSource().sendFeedback(applyQualityPreset(name));
+                            sendClientFeedback(context.getSource(), applyQualityPreset(name));
                             return 1;
                         })))
-                .then(ClientCommandManager.literal("viewdistance")
+                .then(CommandManager.literal("viewdistance")
                     .executes(context -> {
                         if (renderer != null) {
-                            context.getSource().sendFeedback(Text.literal("View distance fade: " + renderer.getViewDistanceFade().describe()));
+                            sendClientFeedback(context.getSource(), Text.literal("View distance fade: " + renderer.getViewDistanceFade().describe()));
                         } else {
-                            context.getSource().sendFeedback(Text.literal("Renderer not available"));
+                            sendClientFeedback(context.getSource(), Text.literal("Renderer not available"));
                         }
                         return 1;
                     })
-                    .then(ClientCommandManager.literal("auto")
+                    .then(CommandManager.literal("auto")
                         .executes(context -> {
                             if (renderer != null) {
                                 boolean on = !renderer.getViewDistanceFade().isAuto();
                                 renderer.setViewDistanceFadeAuto(on);
-                                context.getSource().sendFeedback(Text.literal("View distance fade: " + renderer.getViewDistanceFade().describe()));
+                                sendClientFeedback(context.getSource(), Text.literal("View distance fade: " + renderer.getViewDistanceFade().describe()));
                             }
                             return 1;
                         })
-                        .then(ClientCommandManager.literal("on")
+                        .then(CommandManager.literal("on")
                             .executes(context -> {
                                 if (renderer != null) {
                                     renderer.setViewDistanceFadeAuto(true);
-                                    context.getSource().sendFeedback(Text.literal("View distance fade: " + renderer.getViewDistanceFade().describe()));
+                                    sendClientFeedback(context.getSource(), Text.literal("View distance fade: " + renderer.getViewDistanceFade().describe()));
                                 }
                                 return 1;
                             }))
-                        .then(ClientCommandManager.literal("off")
+                        .then(CommandManager.literal("off")
                             .executes(context -> {
                                 if (renderer != null) {
                                     renderer.setViewDistanceFadeAuto(false);
-                                    context.getSource().sendFeedback(Text.literal("View distance fade: " + renderer.getViewDistanceFade().describe()));
+                                    sendClientFeedback(context.getSource(), Text.literal("View distance fade: " + renderer.getViewDistanceFade().describe()));
                                 }
                                 return 1;
                             }))))
-                .then(ClientCommandManager.literal("reload")
+                .then(CommandManager.literal("reload")
                     .executes(context -> {
                         if (rebuildLoadedTerrain()) {
-                            context.getSource().sendFeedback(Text.literal("Terrain cleared - recapturing the sections that were built"));
+                            sendClientFeedback(context.getSource(), Text.literal("Terrain cleared - recapturing the sections that were built"));
                         } else {
-                            context.getSource().sendFeedback(Text.literal("Remix world rendering inactive - nothing to reload"));
+                            sendClientFeedback(context.getSource(), Text.literal("Remix world rendering inactive - nothing to reload"));
                         }
                         return 1;
                     }))
                 .then(sssCommand())
                 .then(zoneCommand())
-                .then(ClientCommandManager.literal("conf")
-                    .then(ClientCommandManager.literal("reload")
+                .then(CommandManager.literal("conf")
+                    .then(CommandManager.literal("reload")
                         .executes(context -> {
                             // Layers parse their conf files at acquire time, so a
                             // release + re-acquire re-reads every conf from disk and
@@ -1105,53 +1099,53 @@ public class RtxRemixMod implements ClientModInitializer {
                             // a no-restart iteration loop for conf authors.
                             ConfLayerDriver driver = renderer != null ? renderer.getConfLayerDriver() : null;
                             if (driver == null) {
-                                context.getSource().sendFeedback(Text.literal(
+                                sendClientFeedback(context.getSource(), Text.literal(
                                         "Conf layers unavailable: the Remix renderer is not initialized"));
                                 return 1;
                             }
                             if (driver.reload()) {
-                                context.getSource().sendFeedback(Text.literal(
+                                sendClientFeedback(context.getSource(), Text.literal(
                                         "Conf layers re-acquired (zones rescanned) - edited conf values are live"));
                             } else if (driver.isActive()) {
                                 // reload() also reports failure when only the
                                 // selected quality preset could not be
                                 // re-acquired; the catalog is driving.
-                                context.getSource().sendFeedback(Text.literal(
+                                sendClientFeedback(context.getSource(), Text.literal(
                                         "Conf layers re-acquired, but the selected quality preset conf could not be "
                                                 + "re-acquired (see log)"));
                             } else {
-                                context.getSource().sendFeedback(Text.literal(
+                                sendClientFeedback(context.getSource(), Text.literal(
                                         "Conf layer reload failed - conf-layer driving disabled (see log)"));
                             }
                             return 1;
                         }))
-                    .then(ClientCommandManager.literal("status")
+                    .then(CommandManager.literal("status")
                         // Default: only interesting rows (nonzero strengths and
                         // unacquired layers) + a summary; "all" dumps every layer.
                         .executes(context -> sendConfStatus(context.getSource(), false))
-                        .then(ClientCommandManager.literal("all")
+                        .then(CommandManager.literal("all")
                             .executes(context -> sendConfStatus(context.getSource(), true)))))
-                .then(ClientCommandManager.literal("water")
+                .then(CommandManager.literal("water")
                     .executes(context -> {
                         BlockTextureManager textureManager = getTextureManager();
                         if (textureManager == null) {
-                            context.getSource().sendFeedback(Text.literal("Water material not available"));
+                            sendClientFeedback(context.getSource(), Text.literal("Water material not available"));
                             return 0;
                         }
                         sendWaterStatus(context.getSource(), textureManager);
                         return 1;
                     })
-                    .then(ClientCommandManager.literal("ior")
+                    .then(CommandManager.literal("ior")
                         .executes(context -> {
                             BlockTextureManager textureManager = getTextureManager();
                             if (textureManager == null) {
-                                context.getSource().sendFeedback(Text.literal("Water material not available"));
+                                sendClientFeedback(context.getSource(), Text.literal("Water material not available"));
                                 return 0;
                             }
-                            context.getSource().sendFeedback(Text.literal("Water IOR: " + textureManager.getWaterIor()));
+                            sendClientFeedback(context.getSource(), Text.literal("Water IOR: " + textureManager.getWaterIor()));
                             return 1;
                         })
-                        .then(ClientCommandManager.argument("value",
+                        .then(CommandManager.argument("value",
                             FloatArgumentType.floatArg(1.0f, 5.0f))
                             .executes(context -> {
                                 float value = FloatArgumentType.getFloat(context, "value");
@@ -1159,18 +1153,18 @@ public class RtxRemixMod implements ClientModInitializer {
                                         manager -> manager.updateWaterIor(value),
                                         "Water IOR set to " + value);
                             })))
-                    .then(ClientCommandManager.literal("distance")
+                    .then(CommandManager.literal("distance")
                         .executes(context -> {
                             BlockTextureManager textureManager = getTextureManager();
                             if (textureManager == null) {
-                                context.getSource().sendFeedback(Text.literal("Water material not available"));
+                                sendClientFeedback(context.getSource(), Text.literal("Water material not available"));
                                 return 0;
                             }
-                            context.getSource().sendFeedback(Text.literal(
+                            sendClientFeedback(context.getSource(), Text.literal(
                                 "Water transmittance distance: " + textureManager.getWaterTransmittanceDistance()));
                             return 1;
                         })
-                        .then(ClientCommandManager.argument("value",
+                        .then(CommandManager.argument("value",
                             FloatArgumentType.floatArg(0.001f, 1000.0f))
                             .executes(context -> {
                                 float value = FloatArgumentType.getFloat(context, "value");
@@ -1178,24 +1172,24 @@ public class RtxRemixMod implements ClientModInitializer {
                                         manager -> manager.updateWaterTransmittanceDistance(value),
                                         "Water transmittance distance set to " + value);
                             })))
-                    .then(ClientCommandManager.literal("color")
+                    .then(CommandManager.literal("color")
                         .executes(context -> {
                             BlockTextureManager textureManager = getTextureManager();
                             if (textureManager == null) {
-                                context.getSource().sendFeedback(Text.literal("Water material not available"));
+                                sendClientFeedback(context.getSource(), Text.literal("Water material not available"));
                                 return 0;
                             }
-                            context.getSource().sendFeedback(Text.literal("Water transmittance color: "
+                            sendClientFeedback(context.getSource(), Text.literal("Water transmittance color: "
                                 + textureManager.getWaterTransmittanceR() + ", "
                                 + textureManager.getWaterTransmittanceG() + ", "
                                 + textureManager.getWaterTransmittanceB()));
                             return 1;
                         })
-                        .then(ClientCommandManager.argument("r",
+                        .then(CommandManager.argument("r",
                             FloatArgumentType.floatArg(0.0f, 10.0f))
-                            .then(ClientCommandManager.argument("g",
+                            .then(CommandManager.argument("g",
                                 FloatArgumentType.floatArg(0.0f, 10.0f))
-                                .then(ClientCommandManager.argument("b",
+                                .then(CommandManager.argument("b",
                                     FloatArgumentType.floatArg(0.0f, 10.0f))
                                     .executes(context -> {
                                         float r = FloatArgumentType.getFloat(context, "r");
@@ -1207,7 +1201,7 @@ public class RtxRemixMod implements ClientModInitializer {
                                     }))))))
             );
 
-            dispatcher.register(ClientCommandManager.literal("rtx")
+            dispatcher.register(CommandManager.literal("rtx")
                 .then(benchmarkCommand())
                 .then(cameraCommand())
                 .then(shotCommand())
@@ -1222,16 +1216,16 @@ public class RtxRemixMod implements ClientModInitializer {
      * chat, so the default view is the bounded summary from
      * ConfLayerDriver.formatStatusSummary; "all" prints every layer.
      */
-    private int sendConfStatus(FabricClientCommandSource source,
+    private int sendConfStatus(ServerCommandSource source,
                                boolean all) {
         ConfLayerDriver driver = renderer != null ? renderer.getConfLayerDriver() : null;
         if (driver == null) {
-            source.sendFeedback(Text.literal(
+            sendClientFeedback(source, Text.literal(
                     "Conf layers unavailable: the Remix renderer is not initialized"));
             return 1;
         }
         if (!driver.isActive()) {
-            source.sendFeedback(Text.literal(
+            sendClientFeedback(source, Text.literal(
                     "Conf layers inactive (reload failed); run /rtx conf reload to retry"));
             return 1;
         }
@@ -1248,16 +1242,16 @@ public class RtxRemixMod implements ClientModInitializer {
                 } else {
                     idle++;
                 }
-                source.sendFeedback(Text.literal("  " + layer.name() + " = "
+                sendClientFeedback(source, Text.literal("  " + layer.name() + " = "
                         + (layer.acquired() ? String.valueOf(layer.strength()) : "unacquired (see log)")));
             }
-            source.sendFeedback(Text.literal(String.format("Conf layers: %d active, %d idle, %d unacquired",
+            sendClientFeedback(source, Text.literal(String.format("Conf layers: %d active, %d idle, %d unacquired",
                     active, idle, unacquired)));
         } else {
             // Bounded default view (worst case 12 lines; healthy quiet = 1):
             // summary header, capped active rows, one line for unacquired.
             for (String line : ConfLayerDriver.formatStatusSummary(layers)) {
-                source.sendFeedback(Text.literal(line));
+                sendClientFeedback(source, Text.literal(line));
             }
         }
         return 1;
@@ -1416,28 +1410,28 @@ public class RtxRemixMod implements ClientModInitializer {
     }
 
     private LiteralArgumentBuilder<
-            FabricClientCommandSource> zoneCommand() {
-        return ClientCommandManager.literal("zone")
+            ServerCommandSource> zoneCommand() {
+        return CommandManager.literal("zone")
             // /rtx zone define <name> [--inner r] [--outer r] [--center x y z] ... - define or replace a
             // logic zone; radii are optional (bare define = inner 10 / outer 30, box --fade defaults to 20)
-            .then(ClientCommandManager.literal("define")
-                .then(ClientCommandManager.argument("spec",
+            .then(CommandManager.literal("define")
+                .then(CommandManager.argument("spec",
                         StringArgumentType.greedyString())
                     .executes(context -> {
                         if (renderer == null) {
-                            context.getSource().sendFeedback(Text.literal("Remix renderer not available"));
+                            sendClientFeedback(context.getSource(), Text.literal("Remix renderer not available"));
                             return 1;
                         }
                         ConfLayerDriver defineDriver = renderer.getConfLayerDriver();
                         if (defineDriver == null || !defineDriver.isActive()) {
-                            context.getSource().sendFeedback(Text.literal(
+                            sendClientFeedback(context.getSource(), Text.literal(
                                 "Conf-layer blending is inactive (layer acquire failure); "
                                 + "check /rtx conf status and the log, or retry with /rtx conf reload"));
                             return 1;
                         }
-                        ClientPlayerEntity player = context.getSource().getPlayer();
+                        ClientPlayerEntity player = MinecraftClient.getInstance().player;
                         if (player == null) {
-                            context.getSource().sendFeedback(Text.literal("Player not available"));
+                            sendClientFeedback(context.getSource(), Text.literal("Player not available"));
                             return 1;
                         }
                         String spec = "rtx zone define "
@@ -1454,62 +1448,62 @@ public class RtxRemixMod implements ClientModInitializer {
                                 if (renderer != null && renderer.getZoneRegistry() == activeRegistry) {
                                     activeRegistry.put(zone);
                                 }
-                                context.getSource().sendFeedback(Text.literal(succeeded
+                                sendClientFeedback(context.getSource(), Text.literal(succeeded
                                     ? "Saved zone '" + zone.name() + "' -> " + zone.channel()
                                       + " to this single-player world"
                                     : "Zone '" + zone.name() + "' is active, but could not be saved; see the log"));
                             });
                             if (!savedToWorld) {
-                                context.getSource().sendFeedback(Text.literal(
+                                sendClientFeedback(context.getSource(), Text.literal(
                                     "Zone '" + zone.name() + "' -> " + zone.channel()
                                     + " is active locally for this multiplayer session only; "
                                     + "it is not saved or synchronized"));
                             }
                             if (spec.contains("--center") || spec.contains("--box")) {
-                                context.getSource().sendFeedback(Text.literal(
+                                sendClientFeedback(context.getSource(), Text.literal(
                                     "The same definition text also works as a command-block marker"));
                             } else {
-                                context.getSource().sendFeedback(Text.literal(String.format(
+                                sendClientFeedback(context.getSource(), Text.literal(String.format(
                                     "Centered at your position (%.1f %.1f %.1f). "
                                     + "Add --center to the text before pasting into a command block, "
                                     + "or the block's position becomes the center.",
                                     player.getX(), player.getY(), player.getZ())));
                             }
                             if (zone.usedDefaultRadii()) {
-                                context.getSource().sendFeedback(Text.literal(String.format(
+                                sendClientFeedback(context.getSource(), Text.literal(String.format(
                                     "Radii: inner %.1f, outer %.1f (defaults; pass --inner/--outer to override)",
                                     zone.innerRadius(), zone.outerRadius())));
                             } else if (zone.usedDefaultFade()) {
-                                context.getSource().sendFeedback(Text.literal(String.format(
+                                sendClientFeedback(context.getSource(), Text.literal(String.format(
                                     "Fade: %.1f (default; pass --fade to override)", zone.fade())));
                             }
                             if (!defineDriver.hasAcquiredLayer(zone.channel())) {
-                                context.getSource().sendFeedback(Text.literal(noConfHint(zone.channel())));
+                                sendClientFeedback(context.getSource(), Text.literal(noConfHint(zone.channel())));
                             }
                         } catch (IllegalArgumentException e) {
-                            context.getSource().sendFeedback(Text.literal("Invalid zone: " + e.getMessage()));
+                            sendClientFeedback(context.getSource(), Text.literal("Invalid zone: " + e.getMessage()));
                         }
                         return 1;
                     })))
-            .then(ClientCommandManager.literal("list")
+            .then(CommandManager.literal("list")
                 .executes(context -> {
                     if (renderer == null) {
-                        context.getSource().sendFeedback(Text.literal("Remix renderer not available"));
+                        sendClientFeedback(context.getSource(), Text.literal("Remix renderer not available"));
                         return 1;
                     }
                     Collection<ZoneDefinition> zones = renderer.getZoneRegistry().zones();
-                    context.getSource().sendFeedback(Text.literal("Zones: " + zones.size()));
+                    sendClientFeedback(context.getSource(), Text.literal("Zones: " + zones.size()));
                     for (ZoneDefinition zone : zones) {
-                        context.getSource().sendFeedback(Text.literal("  " + zone.name() + " -> " + zone.channel()));
+                        sendClientFeedback(context.getSource(), Text.literal("  " + zone.name() + " -> " + zone.channel()));
                     }
                     return 1;
                 }))
-            .then(ClientCommandManager.literal("remove")
-                .then(ClientCommandManager.argument("name",
+            .then(CommandManager.literal("remove")
+                .then(CommandManager.argument("name",
                         StringArgumentType.word())
                     .executes(context -> {
                         if (renderer == null) {
-                            context.getSource().sendFeedback(Text.literal("Remix renderer not available"));
+                            sendClientFeedback(context.getSource(), Text.literal("Remix renderer not available"));
                             return 1;
                         }
                         String name = StringArgumentType.getString(context, "name");
@@ -1531,39 +1525,39 @@ public class RtxRemixMod implements ClientModInitializer {
                                 message = "No active zone named '" + name
                                         + "'; any saved definition has been removed";
                             }
-                            context.getSource().sendFeedback(Text.literal(message));
+                            sendClientFeedback(context.getSource(), Text.literal(message));
                         });
                         if (!removedFromWorld) {
-                            context.getSource().sendFeedback(Text.literal(removed
+                            sendClientFeedback(context.getSource(), Text.literal(removed
                                     ? "Removed local session zone '" + name + "'"
                                     : "No local session zone named '" + name + "'"));
                         }
                         return 1;
                     })))
-            .then(ClientCommandManager.literal("rescan")
+            .then(CommandManager.literal("rescan")
                 .executes(context -> {
                     if (renderer == null) {
-                        context.getSource().sendFeedback(Text.literal("Remix renderer not available"));
+                        sendClientFeedback(context.getSource(), Text.literal("Remix renderer not available"));
                         return 1;
                     }
                     MinecraftServer server = MinecraftClient.getInstance().getServer();
                     if (server == null) {
-                        context.getSource().sendFeedback(Text.literal("Rescan needs the integrated server (single-player)"));
+                        sendClientFeedback(context.getSource(), Text.literal("Rescan needs the integrated server (single-player)"));
                         return 1;
                     }
-                    context.getSource().sendFeedback(Text.literal("Rescanning loaded chunks for zone command blocks... (results in log)"));
+                    sendClientFeedback(context.getSource(), Text.literal("Rescanning loaded chunks for zone command blocks... (results in log)"));
                     MarkerBlockScanner.rescan(server, renderer.getZoneRegistry());
                     return 1;
                 }))
-            .then(ClientCommandManager.literal("status")
+            .then(CommandManager.literal("status")
                 .executes(context -> {
                     if (renderer == null) {
-                        context.getSource().sendFeedback(Text.literal("Remix renderer not available"));
+                        sendClientFeedback(context.getSource(), Text.literal("Remix renderer not available"));
                         return 1;
                     }
                     Collection<ZoneDefinition> zones = renderer.getZoneRegistry().zones();
-                    context.getSource().sendFeedback(Text.literal("Zones: " + zones.size()));
-                    ClientPlayerEntity player = context.getSource().getPlayer();
+                    sendClientFeedback(context.getSource(), Text.literal("Zones: " + zones.size()));
+                    ClientPlayerEntity player = MinecraftClient.getInstance().player;
                     ConfLayerDriver statusDriver = renderer.getConfLayerDriver();
                     for (ZoneDefinition zone : zones) {
                         List<String> notes = new ArrayList<>();
@@ -1579,9 +1573,9 @@ public class RtxRemixMod implements ClientModInitializer {
                         }
                         String line = "  " + zone.name() + " -> " + zone.channel()
                             + (notes.isEmpty() ? "" : " (" + String.join("; ", notes) + ")");
-                        context.getSource().sendFeedback(Text.literal(line));
+                        sendClientFeedback(context.getSource(), Text.literal(line));
                     }
-                    context.getSource().sendFeedback(Text.literal("Conf layer strengths: /rtx conf status"));
+                    sendClientFeedback(context.getSource(), Text.literal("Conf layer strengths: /rtx conf status"));
                     return 1;
                 }));
     }
@@ -1597,30 +1591,30 @@ public class RtxRemixMod implements ClientModInitializer {
     }
 
     private LiteralArgumentBuilder<
-            FabricClientCommandSource> sssCommand() {
-        return ClientCommandManager.literal("sss")
+            ServerCommandSource> sssCommand() {
+        return CommandManager.literal("sss")
             .executes(context -> {
                 BlockTextureManager textureManager = getTextureManager();
                 if (!isCutoutSssAvailable(context.getSource(), textureManager)) return 0;
                 sendCutoutSssStatus(context.getSource(), textureManager);
                 return 1;
             })
-            .then(ClientCommandManager.literal("cutout")
+            .then(CommandManager.literal("cutout")
                 .executes(context -> {
                     BlockTextureManager textureManager = getTextureManager();
                     if (!isCutoutSssAvailable(context.getSource(), textureManager)) return 0;
                     sendCutoutSssStatus(context.getSource(), textureManager);
                     return 1;
                 })
-                .then(ClientCommandManager.literal("transmissionDistance")
+                .then(CommandManager.literal("transmissionDistance")
                     .executes(context -> {
                         BlockTextureManager textureManager = getTextureManager();
                         if (!isCutoutSssAvailable(context.getSource(), textureManager)) return 0;
-                        context.getSource().sendFeedback(Text.literal("Cutout SSS transmission distance: "
+                        sendClientFeedback(context.getSource(), Text.literal("Cutout SSS transmission distance: "
                                 + textureManager.getCutoutSssTransmissionDistance()));
                         return 1;
                     })
-                    .then(ClientCommandManager.argument("value",
+                    .then(CommandManager.argument("value",
                             FloatArgumentType.floatArg(0.0001f, 1000.0f))
                         .executes(context -> {
                             float value = FloatArgumentType.getFloat(context, "value");
@@ -1628,15 +1622,15 @@ public class RtxRemixMod implements ClientModInitializer {
                                     textureManager -> textureManager.updateCutoutSssTransmissionDistance(value),
                                     "Cutout SSS transmission distance set to " + value);
                         })))
-                .then(ClientCommandManager.literal("anisotropy")
+                .then(CommandManager.literal("anisotropy")
                     .executes(context -> {
                         BlockTextureManager textureManager = getTextureManager();
                         if (!isCutoutSssAvailable(context.getSource(), textureManager)) return 0;
-                        context.getSource().sendFeedback(Text.literal("Cutout SSS anisotropy: "
+                        sendClientFeedback(context.getSource(), Text.literal("Cutout SSS anisotropy: "
                                 + textureManager.getCutoutSssAnisotropy()));
                         return 1;
                     })
-                    .then(ClientCommandManager.argument("value",
+                    .then(CommandManager.argument("value",
                             FloatArgumentType.floatArg(-1.0f, 1.0f))
                         .executes(context -> {
                             float value = FloatArgumentType.getFloat(context, "value");
@@ -1644,21 +1638,21 @@ public class RtxRemixMod implements ClientModInitializer {
                                     textureManager -> textureManager.updateCutoutSssAnisotropy(value),
                                     "Cutout SSS anisotropy set to " + value);
                         })))
-                .then(ClientCommandManager.literal("albedo")
+                .then(CommandManager.literal("albedo")
                     .executes(context -> {
                         BlockTextureManager textureManager = getTextureManager();
                         if (!isCutoutSssAvailable(context.getSource(), textureManager)) return 0;
-                        context.getSource().sendFeedback(Text.literal("Cutout SSS fallback albedo: "
+                        sendClientFeedback(context.getSource(), Text.literal("Cutout SSS fallback albedo: "
                                 + textureManager.getCutoutSssAlbedoR() + ", "
                                 + textureManager.getCutoutSssAlbedoG() + ", "
                                 + textureManager.getCutoutSssAlbedoB()));
                         return 1;
                     })
-                    .then(ClientCommandManager.argument("r",
+                    .then(CommandManager.argument("r",
                             FloatArgumentType.floatArg(0.0f, 1.0f))
-                        .then(ClientCommandManager.argument("g",
+                        .then(CommandManager.argument("g",
                                 FloatArgumentType.floatArg(0.0f, 1.0f))
-                            .then(ClientCommandManager.argument("b",
+                            .then(CommandManager.argument("b",
                                     FloatArgumentType.floatArg(0.0f, 1.0f))
                                 .executes(context -> {
                                     float r = FloatArgumentType.getFloat(context, "r");
@@ -1668,23 +1662,23 @@ public class RtxRemixMod implements ClientModInitializer {
                                             textureManager -> textureManager.updateCutoutSssAlbedo(r, g, b),
                                             "Cutout SSS fallback albedo set to " + r + ", " + g + ", " + b);
                                 })))))
-                .then(ClientCommandManager.literal("albedoTexture")
+                .then(CommandManager.literal("albedoTexture")
                     .executes(context -> {
                         BlockTextureManager textureManager = getTextureManager();
                         if (!isCutoutSssAvailable(context.getSource(), textureManager)) return 0;
-                        context.getSource().sendFeedback(Text.literal("Cutout SSS albedo texture: "
+                        sendClientFeedback(context.getSource(), Text.literal("Cutout SSS albedo texture: "
                                 + textureManager.isCutoutSssAlbedoTextureEnabled()));
                         return 1;
                     })
-                    .then(ClientCommandManager.literal("on")
+                    .then(CommandManager.literal("on")
                         .executes(context -> updateCutoutSssSetting(context.getSource(),
                                 textureManager -> textureManager.updateCutoutSssAlbedoTextureEnabled(true),
                                 "Cutout SSS albedo texture enabled")))
-                    .then(ClientCommandManager.literal("off")
+                    .then(CommandManager.literal("off")
                         .executes(context -> updateCutoutSssSetting(context.getSource(),
                                 textureManager -> textureManager.updateCutoutSssAlbedoTextureEnabled(false),
                                 "Cutout SSS albedo texture disabled")))
-                    .then(ClientCommandManager.argument("enabled",
+                    .then(CommandManager.argument("enabled",
                             BoolArgumentType.bool())
                         .executes(context -> {
                             boolean enabled = BoolArgumentType.getBool(
@@ -1693,24 +1687,24 @@ public class RtxRemixMod implements ClientModInitializer {
                                     textureManager -> textureManager.updateCutoutSssAlbedoTextureEnabled(enabled),
                                     "Cutout SSS albedo texture " + (enabled ? "enabled" : "disabled"));
                         })))
-                .then(ClientCommandManager.literal("reset")
+                .then(CommandManager.literal("reset")
                     .executes(context -> updateCutoutSssSetting(context.getSource(),
                             BlockTextureManager::resetCutoutSss,
                             "Cutout SSS settings reset"))));
     }
 
     private boolean isCutoutSssAvailable(
-            FabricClientCommandSource source,
+            ServerCommandSource source,
             BlockTextureManager textureManager) {
         if (textureManager == null || !textureManager.isInitialized()) {
-            source.sendFeedback(Text.literal("Cutout SSS materials not available"));
+            sendClientFeedback(source, Text.literal("Cutout SSS materials not available"));
             return false;
         }
         return true;
     }
 
     private int updateCutoutSssSetting(
-            FabricClientCommandSource source,
+            ServerCommandSource source,
             Function<BlockTextureManager, Boolean> updater,
             String successMessage) {
         BlockTextureManager textureManager = getTextureManager();
@@ -1723,26 +1717,26 @@ public class RtxRemixMod implements ClientModInitializer {
 
         boolean rebuilt = Boolean.TRUE.equals(updater.apply(textureManager));
         if (hadActiveAtlasMaterial && !rebuilt) {
-            source.sendFeedback(Text.literal("Failed to rebuild active cutout SSS material"));
+            sendClientFeedback(source, Text.literal("Failed to rebuild active cutout SSS material"));
             return 0;
         }
         if (rebuilt) {
             requestTerrainRebuildForMaterialChange();
         }
 
-        source.sendFeedback(Text.literal(successMessage + (rebuilt
+        sendClientFeedback(source, Text.literal(successMessage + (rebuilt
                 ? " (terrain rebuild requested)"
                 : " (no active cutout SSS atlas material)")));
         return 1;
     }
 
     private int updateWaterSetting(
-            FabricClientCommandSource source,
+            ServerCommandSource source,
             Function<BlockTextureManager, Boolean> updater,
             String successMessage) {
         BlockTextureManager textureManager = getTextureManager();
         if (textureManager == null) {
-            source.sendFeedback(Text.literal("Water material not available"));
+            sendClientFeedback(source, Text.literal("Water material not available"));
             return 0;
         }
 
@@ -1750,12 +1744,12 @@ public class RtxRemixMod implements ClientModInitializer {
 
         boolean rebuilt = Boolean.TRUE.equals(updater.apply(textureManager));
         if (!rebuilt) {
-            source.sendFeedback(Text.literal("Failed to rebuild water material"));
+            sendClientFeedback(source, Text.literal("Failed to rebuild water material"));
             return 0;
         }
 
         requestTerrainRebuildForMaterialChange();
-        source.sendFeedback(Text.literal(successMessage + " (terrain rebuild requested)"));
+        sendClientFeedback(source, Text.literal(successMessage + " (terrain rebuild requested)"));
         return 1;
     }
 
@@ -1869,27 +1863,27 @@ public class RtxRemixMod implements ClientModInitializer {
     }
 
     private static LiteralArgumentBuilder<
-            FabricClientCommandSource> benchmarkCommand() {
-        return ClientCommandManager.literal("benchmark")
+            ServerCommandSource> benchmarkCommand() {
+        return CommandManager.literal("benchmark")
             .executes(context -> {
                 if (renderer != null && renderer.getBenchmarkController() != null) {
-                    context.getSource().sendFeedback(
+                    sendClientFeedback(context.getSource(),
                             Text.literal(renderer.getBenchmarkController().start()));
                 }
                 return 1;
             })
-            .then(ClientCommandManager.literal("stop")
+            .then(CommandManager.literal("stop")
                 .executes(context -> {
                     if (renderer != null && renderer.getBenchmarkController() != null) {
                         renderer.getBenchmarkController().stop(renderer.getPerfTimer());
-                        context.getSource().sendFeedback(Text.literal("Benchmark stopped"));
+                        sendClientFeedback(context.getSource(), Text.literal("Benchmark stopped"));
                     }
                     return 1;
                 }))
-            .then(ClientCommandManager.literal("status")
+            .then(CommandManager.literal("status")
                 .executes(context -> {
                     if (renderer != null && renderer.getBenchmarkController() != null) {
-                        context.getSource().sendFeedback(
+                        sendClientFeedback(context.getSource(),
                             Text.literal("Benchmark: " + renderer.getBenchmarkController().getStatus()
                                 + " | target " + renderer.getBenchmarkController().getTargetStatus()));
                     }
@@ -1898,54 +1892,54 @@ public class RtxRemixMod implements ClientModInitializer {
     }
 
     static LiteralArgumentBuilder<
-            FabricClientCommandSource> cameraCommand() {
-        return ClientCommandManager.literal("camera")
+            ServerCommandSource> cameraCommand() {
+        return CommandManager.literal("camera")
             .executes(context -> cameraStatus(context.getSource()))
-            .then(ClientCommandManager.literal("record")
-                .then(ClientCommandManager.argument("name",
+            .then(CommandManager.literal("record")
+                .then(CommandManager.argument("name",
                         StringArgumentType.word())
                     .executes(context -> {
                         String name = StringArgumentType.getString(context, "name");
                         CameraController controller = getCameraControllerForCommand(context.getSource());
                         if (controller == null) return 0;
-                        context.getSource().sendFeedback(Text.literal(controller.arm(name)));
+                        sendClientFeedback(context.getSource(), Text.literal(controller.arm(name)));
                         return 1;
                     })))
-            .then(ClientCommandManager.literal("play")
-                .then(ClientCommandManager.argument("name",
+            .then(CommandManager.literal("play")
+                .then(CommandManager.argument("name",
                         StringArgumentType.word())
                     .executes(context -> playCamera(
                             context.getSource(),
                             StringArgumentType.getString(context, "name"),
                             CameraController.PlaybackMode.TIME
                     ))
-                    .then(ClientCommandManager.literal("time")
+                    .then(CommandManager.literal("time")
                         .executes(context -> playCamera(
                                 context.getSource(),
                                 StringArgumentType.getString(context, "name"),
                                 CameraController.PlaybackMode.TIME
                         )))
-                    .then(ClientCommandManager.literal("fixed-60")
+                    .then(CommandManager.literal("fixed-60")
                         .executes(context -> playCamera(
                                 context.getSource(),
                                 StringArgumentType.getString(context, "name"),
                                 CameraController.PlaybackMode.FIXED_60
                         )))))
-            .then(ClientCommandManager.literal("seek")
-                .then(ClientCommandManager.argument("seconds",
+            .then(CommandManager.literal("seek")
+                .then(CommandManager.argument("seconds",
                         DoubleArgumentType.doubleArg(0.0))
                     .executes(context -> {
                         double seconds = DoubleArgumentType.getDouble(
                                 context, "seconds");
                         CameraController controller = getCameraControllerForCommand(context.getSource());
                         if (controller == null) return 0;
-                        context.getSource().sendFeedback(Text.literal(
+                        sendClientFeedback(context.getSource(), Text.literal(
                                 controller.seek(Math.round(seconds * 1_000.0))));
                         return 1;
                     }))
-                .then(ClientCommandManager.argument("name",
+                .then(CommandManager.argument("name",
                         StringArgumentType.word())
-                    .then(ClientCommandManager.argument("seconds",
+                    .then(CommandManager.argument("seconds",
                             DoubleArgumentType.doubleArg(0.0))
                         .executes(context -> {
                             String name = StringArgumentType.getString(
@@ -1954,45 +1948,45 @@ public class RtxRemixMod implements ClientModInitializer {
                                     context, "seconds");
                             CameraController controller = getCameraControllerForCommand(context.getSource());
                             if (controller == null) return 0;
-                            context.getSource().sendFeedback(Text.literal(
+                            sendClientFeedback(context.getSource(), Text.literal(
                                     controller.seek(name, Math.round(seconds * 1_000.0))));
                             return 1;
                         }))))
-            .then(ClientCommandManager.literal("pause")
+            .then(CommandManager.literal("pause")
                 .executes(context -> {
                     CameraController controller = getCameraControllerForCommand(context.getSource());
                     if (controller == null) return 0;
-                    context.getSource().sendFeedback(Text.literal(controller.pause()));
+                    sendClientFeedback(context.getSource(), Text.literal(controller.pause()));
                     return 1;
                 }))
-            .then(ClientCommandManager.literal("resume")
+            .then(CommandManager.literal("resume")
                 .executes(context -> {
                     CameraController controller = getCameraControllerForCommand(context.getSource());
                     if (controller == null) return 0;
-                    context.getSource().sendFeedback(Text.literal(controller.resume()));
+                    sendClientFeedback(context.getSource(), Text.literal(controller.resume()));
                     return 1;
                 }))
-            .then(ClientCommandManager.literal("stop")
+            .then(CommandManager.literal("stop")
                 .executes(context -> {
                     CameraController controller = getCameraControllerForCommand(context.getSource());
                     if (controller == null) return 0;
-                    context.getSource().sendFeedback(Text.literal(controller.stop()));
+                    sendClientFeedback(context.getSource(), Text.literal(controller.stop()));
                     return 1;
                 }))
-            .then(ClientCommandManager.literal("status")
+            .then(CommandManager.literal("status")
                 .executes(context -> cameraStatus(context.getSource())))
-            .then(ClientCommandManager.literal("time")
-                .then(ClientCommandManager.literal("day")
+            .then(CommandManager.literal("time")
+                .then(CommandManager.literal("day")
                     .executes(context -> setCameraTime(context.getSource(), 1000)))
-                .then(ClientCommandManager.literal("noon")
+                .then(CommandManager.literal("noon")
                     .executes(context -> setCameraTime(context.getSource(), 6000)))
-                .then(ClientCommandManager.literal("sunset")
+                .then(CommandManager.literal("sunset")
                     .executes(context -> setCameraTime(context.getSource(), 12000)))
-                .then(ClientCommandManager.literal("night")
+                .then(CommandManager.literal("night")
                     .executes(context -> setCameraTime(context.getSource(), 13000)))
-                .then(ClientCommandManager.literal("midnight")
+                .then(CommandManager.literal("midnight")
                     .executes(context -> setCameraTime(context.getSource(), 18000)))
-                .then(ClientCommandManager.argument("ticks",
+                .then(CommandManager.argument("ticks",
                         LongArgumentType.longArg(0, 23999))
                     .executes(context -> {
                         long ticks = LongArgumentType.getLong(context, "ticks");
@@ -2006,89 +2000,89 @@ public class RtxRemixMod implements ClientModInitializer {
      * runs; the harness captures the set headlessly later.
      */
     static LiteralArgumentBuilder<
-            FabricClientCommandSource> shotCommand() {
-        return ClientCommandManager.literal("shot")
+            ServerCommandSource> shotCommand() {
+        return CommandManager.literal("shot")
             .executes(context -> listShots(context.getSource()))
-            .then(ClientCommandManager.literal("mark")
-                .then(ClientCommandManager.argument("name",
+            .then(CommandManager.literal("mark")
+                .then(CommandManager.argument("name",
                         StringArgumentType.word())
                     .executes(context -> markShot(
                             context.getSource(),
                             StringArgumentType.getString(context, "name")))))
-            .then(ClientCommandManager.literal("list")
+            .then(CommandManager.literal("list")
                 .executes(context -> listShots(context.getSource())))
-            .then(ClientCommandManager.literal("remove")
-                .then(ClientCommandManager.argument("name",
+            .then(CommandManager.literal("remove")
+                .then(CommandManager.argument("name",
                         StringArgumentType.word())
                     .executes(context -> {
                         CameraController controller = getCameraControllerForCommand(context.getSource());
                         if (controller == null) return 0;
-                        context.getSource().sendFeedback(Text.literal(controller.removeStillShot(
+                        sendClientFeedback(context.getSource(), Text.literal(controller.removeStillShot(
                                 DOCS_SHOT_SET, StringArgumentType.getString(context, "name"))));
                         return 1;
                     })));
     }
 
-    private static int markShot(FabricClientCommandSource source, String name) {
+    private static int markShot(ServerCommandSource source, String name) {
         CameraController controller = getCameraControllerForCommand(source);
         if (controller == null) return 0;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null) {
-            source.sendFeedback(Text.literal("No world loaded."));
+            sendClientFeedback(source, Text.literal("No world loaded."));
             return 0;
         }
         CameraController.StillShotScene scene = new CameraController.StillShotScene(
                 StillShot.Weather.of(client.world.isRaining(), client.world.isThundering()),
                 isRtxEnabled(),
                 renderer.getCloudRenderer() != null && renderer.getCloudRenderer().isProceduralClouds());
-        source.sendFeedback(Text.literal(controller.markStillShot(DOCS_SHOT_SET, name, scene)));
+        sendClientFeedback(source, Text.literal(controller.markStillShot(DOCS_SHOT_SET, name, scene)));
         return 1;
     }
 
-    private static int listShots(FabricClientCommandSource source) {
+    private static int listShots(ServerCommandSource source) {
         CameraController controller = getCameraControllerForCommand(source);
         if (controller == null) return 0;
         for (String line : controller.describeStillShots(DOCS_SHOT_SET).split("\n")) {
-            source.sendFeedback(Text.literal(line));
+            sendClientFeedback(source, Text.literal(line));
         }
         return 1;
     }
 
     private static int cameraStatus(
-            FabricClientCommandSource source) {
+            ServerCommandSource source) {
         CameraController controller = getCameraControllerForCommand(source);
         if (controller == null) return 0;
-        source.sendFeedback(Text.literal(controller.status()));
+        sendClientFeedback(source, Text.literal(controller.status()));
         return 1;
     }
 
     private static int playCamera(
-            FabricClientCommandSource source,
+            ServerCommandSource source,
             String name,
             CameraController.PlaybackMode mode) {
         CameraController controller = getCameraControllerForCommand(source);
         if (controller == null) return 0;
-        source.sendFeedback(Text.literal(controller.play(name, mode)));
+        sendClientFeedback(source, Text.literal(controller.play(name, mode)));
         return 1;
     }
 
     private static int setCameraTime(
-            FabricClientCommandSource source,
+            ServerCommandSource source,
             long timeOfDay) {
         CameraController controller = getCameraControllerForCommand(source);
         if (controller == null) return 0;
-        source.sendFeedback(Text.literal(controller.setTimeOfDay(timeOfDay)));
+        sendClientFeedback(source, Text.literal(controller.setTimeOfDay(timeOfDay)));
         return 1;
     }
 
     private static CameraController getCameraControllerForCommand(
-            FabricClientCommandSource source) {
+            ServerCommandSource source) {
         if (renderer == null || !renderer.isInitialized() || renderer.getCameraController() == null) {
-            source.sendFeedback(Text.literal("Camera controller not available: RTX Remix renderer is not initialized."));
+            sendClientFeedback(source, Text.literal("Camera controller not available: RTX Remix renderer is not initialized."));
             return null;
         }
         if (renderer.getBenchmarkController() != null && renderer.getBenchmarkController().isRunning()) {
-            source.sendFeedback(Text.literal("Camera controls are unavailable while a benchmark is running."));
+            sendClientFeedback(source, Text.literal("Camera controls are unavailable while a benchmark is running."));
             return null;
         }
         return renderer.getCameraController();
@@ -2101,32 +2095,32 @@ public class RtxRemixMod implements ClientModInitializer {
         return renderer.getTextureManager();
     }
 
-    private void sendWaterStatus(FabricClientCommandSource source,
+    private void sendWaterStatus(ServerCommandSource source,
                                  BlockTextureManager textureManager) {
-        source.sendFeedback(Text.literal("Water material:"));
-        source.sendFeedback(Text.literal("  IOR: " + textureManager.getWaterIor()));
-        source.sendFeedback(Text.literal("  Transmittance color: "
+        sendClientFeedback(source, Text.literal("Water material:"));
+        sendClientFeedback(source, Text.literal("  IOR: " + textureManager.getWaterIor()));
+        sendClientFeedback(source, Text.literal("  Transmittance color: "
                 + textureManager.getWaterTransmittanceR() + ", "
                 + textureManager.getWaterTransmittanceG() + ", "
                 + textureManager.getWaterTransmittanceB()));
-        source.sendFeedback(Text.literal(
+        sendClientFeedback(source, Text.literal(
                 "  Transmittance distance: " + textureManager.getWaterTransmittanceDistance()));
     }
 
     private void sendCutoutSssStatus(
-            FabricClientCommandSource source,
+            ServerCommandSource source,
             BlockTextureManager textureManager) {
-        source.sendFeedback(Text.literal("Cutout SSS material:"));
-        source.sendFeedback(Text.literal(
+        sendClientFeedback(source, Text.literal("Cutout SSS material:"));
+        sendClientFeedback(source, Text.literal(
                 "  Active atlas material: " + textureManager.hasCutoutSssAtlasMaterial()));
-        source.sendFeedback(Text.literal(
+        sendClientFeedback(source, Text.literal(
                 "  Transmission distance: " + textureManager.getCutoutSssTransmissionDistance()));
-        source.sendFeedback(Text.literal("  Anisotropy: " + textureManager.getCutoutSssAnisotropy()));
-        source.sendFeedback(Text.literal("  Fallback albedo: "
+        sendClientFeedback(source, Text.literal("  Anisotropy: " + textureManager.getCutoutSssAnisotropy()));
+        sendClientFeedback(source, Text.literal("  Fallback albedo: "
                 + textureManager.getCutoutSssAlbedoR() + ", "
                 + textureManager.getCutoutSssAlbedoG() + ", "
                 + textureManager.getCutoutSssAlbedoB()));
-        source.sendFeedback(Text.literal(
+        sendClientFeedback(source, Text.literal(
                 "  Albedo texture: " + textureManager.isCutoutSssAlbedoTextureEnabled()));
     }
     
@@ -2314,6 +2308,16 @@ public class RtxRemixMod implements ClientModInitializer {
 
     public static boolean isRtxEnabled() {
         return rtxEnabled;
+    }
+
+    private static String rtxRenderingStatus() {
+        return rtxRenderingStatus(rtxEnabled, renderer != null && renderer.isInitialized());
+    }
+
+    static String rtxRenderingStatus(boolean enabled, boolean initialized) {
+        if (!enabled) return "RTX Rendering: OFF";
+        if (!initialized) return "RTX Rendering: unavailable (renderer not initialized)";
+        return "RTX Rendering: ON";
     }
     
     /**

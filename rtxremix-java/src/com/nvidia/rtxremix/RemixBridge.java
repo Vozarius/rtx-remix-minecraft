@@ -35,6 +35,8 @@ public final class RemixBridge {
     /**
      * Overwrites this process's command line in place: the PEB copy and the
      * copies {@code GetCommandLineW} and {@code GetCommandLineA} return.
+     * Only the prefix before the first NUL is converted into the ANSI copy;
+     * the replacement can clear a stale tail beyond that prefix in the PEB.
      *
      * @param replacement a line exactly as long as {@link #processCommandLine()}
      * @return REMIXAPI_ERROR_CODE_SUCCESS (0), or REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS

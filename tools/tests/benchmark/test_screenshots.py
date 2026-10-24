@@ -96,9 +96,9 @@ class ExportTests(unittest.TestCase):
 class ReadmeTests(unittest.TestCase):
     def test_enabled_pack_names_start_with_builtin_baseline(self):
         cases = (
-            ({}, ["fabric"]),
-            ({"mode": "pinned", "name": "texture", "version": "0.55.0"}, ["fabric", "texture 0.55.0"]),
-            ({"mode": "local"}, ["fabric", "a local art pack"]),
+            ({}, ["mod_resources"]),
+            ({"mode": "pinned", "name": "texture", "version": "0.55.0"}, ["mod_resources", "texture 0.55.0"]),
+            ({"mode": "local"}, ["mod_resources", "a local art pack"]),
         )
         for resource_pack, expected in cases:
             with self.subTest(resource_pack=resource_pack):
@@ -107,7 +107,7 @@ class ReadmeTests(unittest.TestCase):
     def test_provenance_lists_every_shot_with_its_scene(self):
         text = screenshots.provenance_text(
             world_version="0.11.0",
-            pack_names=["fabric", "texture 0.55.0"],
+            pack_names=["mod_resources", "texture 0.55.0"],
             width=1920,
             height=1080,
             shots=[
@@ -118,7 +118,7 @@ class ReadmeTests(unittest.TestCase):
             ],
         )
         self.assertIn("version 0.11.0", text)
-        self.assertIn("`fabric` and `texture 0.55.0`", text)
+        self.assertIn("`mod_resources` and `texture 0.55.0`", text)
         self.assertIn("1920x1080", text)
         self.assertIn("| `village-night.jpg` | 18000 | clear | classic | on |", text)
         self.assertIn("| `thunderstorm.jpg` | 13000 | thunderstorm | classic | on |", text)

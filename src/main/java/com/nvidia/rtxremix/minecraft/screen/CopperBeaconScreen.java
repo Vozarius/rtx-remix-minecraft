@@ -14,7 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.Function;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.gui.tooltip.Tooltip;
@@ -268,11 +268,11 @@ public final class CopperBeaconScreen extends HandledScreen<CopperBeaconScreenHa
     }
 
     private void flushPending() {
-        if (!ClientPlayNetworking.canSend(CopperBeaconUpdatePayload.ID)) {
+        if (client.getNetworkHandler() == null || !client.getNetworkHandler().hasChannel(CopperBeaconUpdatePayload.ID)) {
             pending.clear();
             return;
         }
-        pending.forEach((field, value) -> ClientPlayNetworking.send(
+        pending.forEach((field, value) -> PacketDistributor.sendToServer(
                 new CopperBeaconUpdatePayload(handler.syncId, field, value)));
         pending.clear();
     }

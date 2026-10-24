@@ -5,8 +5,7 @@
 package com.nvidia.rtxremix.minecraft.block;
 
 import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
@@ -37,17 +36,14 @@ public record CopperBeaconUpdatePayload(int syncId, Field field, float value)
                 }
             };
 
-    public static void register() {
-        PayloadTypeRegistry.playC2S().register(ID, PACKET_CODEC);
-        ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
-                context.server().execute(() -> {
-                    if (context.player().currentScreenHandler
-                                    instanceof CopperBeaconScreenHandler handler
-                            && handler.syncId == payload.syncId
-                            && handler.canUse(context.player())) {
-                        handler.applyUpdate(payload.field, payload.value);
-                    }
-                }));
+    public static void register(RegisterPayloadHandlersEvent event) {
+        event.registrar("1").playToServer(ID, PACKET_CODEC, (payload, context) -> {
+            if (context.player().currentScreenHandler instanceof CopperBeaconScreenHandler handler
+                    && handler.syncId == payload.syncId
+                    && handler.canUse(context.player())) {
+                handler.applyUpdate(payload.field, payload.value);
+            }
+        });
     }
 
     @Override

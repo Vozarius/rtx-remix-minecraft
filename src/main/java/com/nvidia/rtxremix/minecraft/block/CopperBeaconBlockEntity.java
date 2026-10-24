@@ -6,7 +6,11 @@ package com.nvidia.rtxremix.minecraft.block;
 
 import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import com.nvidia.rtxremix.minecraft.light.BeaconBeam;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
+import net.minecraft.screen.NamedScreenHandlerFactory;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.registries.DeferredRegister;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityType;
@@ -17,14 +21,10 @@ import net.minecraft.item.DyeItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** Persistent optics, dye inventory, and articulated motion for one Copper Beacon. */
 public final class CopperBeaconBlockEntity extends BlockEntity
-        implements Inventory, ExtendedScreenHandlerFactory<CopperBeaconScreenData> {
+        implements Inventory, NamedScreenHandlerFactory {
 
     private static final Set<CopperBeaconBlockEntity> LOADED =
             ConcurrentHashMap.newKeySet();
@@ -58,9 +58,11 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     private static final String PITCH_KEY = "pitch";
     private static final String DYE_KEY = "dye";
 
-    public static final BlockEntityType<CopperBeaconBlockEntity> TYPE =
-            BlockEntityType.Builder.create(
-                    CopperBeaconBlockEntity::new, CopperBeaconBlock.INSTANCE).build();
+    private static final DeferredRegister<BlockEntityType<?>> TYPES = DeferredRegister.create(
+            RegistryKeys.BLOCK_ENTITY_TYPE, RtxRemixCommonMod.MOD_ID);
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CopperBeaconBlockEntity>> TYPE =
+            TYPES.register(CopperBeaconBlock.ID, () -> BlockEntityType.Builder.create(
+                    CopperBeaconBlockEntity::new, CopperBeaconBlock.INSTANCE.get()).build(null));
 
     private float intensityMultiplier = DEFAULT_INTENSITY_MULTIPLIER;
     private float coneAngle = DEFAULT_CONE_ANGLE;
@@ -72,7 +74,7 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     private ItemStack dye = ItemStack.EMPTY;
 
     public CopperBeaconBlockEntity(BlockPos pos, BlockState state) {
-        super(TYPE, pos, state);
+        super(TYPE.get(), pos, state);
     }
 
     public static Iterable<CopperBeaconBlockEntity> loaded() {
@@ -99,11 +101,8 @@ public final class CopperBeaconBlockEntity extends BlockEntity
         }
     }
 
-    static void register() {
-        Registry.register(
-                Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(RtxRemixCommonMod.MOD_ID, CopperBeaconBlock.ID),
-                TYPE);
+    public static void register(IEventBus modBus) {
+        TYPES.register(modBus);
     }
 
     public float getAzimuth() {
@@ -307,11 +306,6 @@ public final class CopperBeaconBlockEntity extends BlockEntity
             frozenTick = worldTick;
             markDirtyAndSync();
         }
-    }
-
-    @Override
-    public CopperBeaconScreenData getScreenOpeningData(ServerPlayerEntity player) {
-        return new CopperBeaconScreenData(pos);
     }
 
     @Override

@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
@@ -39,8 +40,14 @@ final class CommandLineRedaction {
      * @return the blanked line, the same length as {@code commandLine}
      */
     static Result redact(String commandLine, Collection<String> options) {
-        List<Argument> arguments = split(commandLine);
         char[] chars = commandLine.toCharArray();
+        int terminator = commandLine.indexOf('\0');
+        // A shortened native command line can retain the original PEB length.
+        // Clear its unused tail rather than parsing stale arguments after the NUL.
+        if (terminator >= 0) {
+            Arrays.fill(chars, terminator, chars.length, '\0');
+        }
+        List<Argument> arguments = split(terminator < 0 ? commandLine : commandLine.substring(0, terminator));
         int blankedValues = 0;
         for (int i = 1; i < arguments.size(); i++) {
             Argument argument = arguments.get(i);

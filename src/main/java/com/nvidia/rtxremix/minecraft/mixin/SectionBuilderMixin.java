@@ -24,6 +24,8 @@ import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.world.BlockRenderView;
 import net.minecraft.world.BlockView;
 import com.mojang.blaze3d.systems.VertexSorter;
+import net.neoforged.neoforge.client.event.AddSectionGeometryEvent;
+import java.util.List;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -57,11 +59,11 @@ public class SectionBuilderMixin {
     private static final ThreadLocal<BlockDataQueue.CaptureToken> rtxremix$blockDataCaptureToken = new ThreadLocal<>();
 
     /**
-     * Whether this build() is capturing for Remix, latched once at HEAD.
+     * Whether this compile() is capturing for Remix, latched once at HEAD.
      *
      * <p>{@code rtxEnabled} is volatile so worker threads see a toggle promptly,
      * which means every redirect below would otherwise read it independently and
-     * a toggle could land <em>between</em> two of them inside one build, routing
+     * a toggle could land <em>between</em> two of them inside one compile, routing
      * some blocks of a section into the Remix emitter and the rest into vanilla's
      * GL path. Reading one latched value keeps a build wholly in one mode;
      * {@code setRtxEnabled} forces a WorldRenderer.reload(), so sections built
@@ -83,12 +85,13 @@ public class SectionBuilderMixin {
     private BlockRenderManager blockRenderManager;
 
     // HEAD: init per-section emission state
-    @Inject(method = "build", at = @At("HEAD"))
+    @Inject(method = "compile", at = @At("HEAD"))
     private void rtxremix$onBuildHead(
             ChunkSectionPos sectionPos,
             ChunkRendererRegion renderRegion,
             VertexSorter vertexSorter,
             BlockBufferAllocatorStorage allocatorStorage,
+            List<AddSectionGeometryEvent.AdditionalSectionRenderer> additionalRenderers,
             CallbackInfoReturnable<SectionBuilder.RenderData> cir) {
 
         // Latched before any early return below, and unconditionally, so a value
@@ -114,7 +117,7 @@ public class SectionBuilderMixin {
     }
 
     // isOpaqueFullCube: capture opacity / face masks / lights / quads
-    @Redirect(method = "build",
+    @Redirect(method = "compile",
               at = @At(value = "INVOKE",
                        target = "Lnet/minecraft/block/BlockState;isOpaqueFullCube(Lnet/minecraft/world/BlockView;Lnet/minecraft/util/math/BlockPos;)Z"))
     private boolean rtxremix$captureBlock(BlockState state, BlockView world, BlockPos pos) {
@@ -135,7 +138,7 @@ public class SectionBuilderMixin {
     // While capturing, the block's quads were already emitted above, so vanilla's raster
     // path for it (layer buffer, matrix stack, renderBlock) is dead work. Reporting the
     // block invisible makes vanilla skip all of it.
-    @Redirect(method = "build",
+    @Redirect(method = "compile",
               at = @At(value = "INVOKE",
                        target = "Lnet/minecraft/block/BlockState;getRenderType()Lnet/minecraft/block/BlockRenderType;"))
     private BlockRenderType rtxremix$renderTypeForVanilla(BlockState state) {
@@ -145,7 +148,7 @@ public class SectionBuilderMixin {
     }
 
     // renderFluid: emit fluid quads for Remix, skip GL
-    @Redirect(method = "build",
+    @Redirect(method = "compile",
               at = @At(value = "INVOKE",
                        target = "Lnet/minecraft/client/render/block/BlockRenderManager;renderFluid(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/world/BlockRenderView;Lnet/minecraft/client/render/VertexConsumer;Lnet/minecraft/block/BlockState;Lnet/minecraft/fluid/FluidState;)V"))
     private void rtxremix$redirectFluid(BlockRenderManager brm,
@@ -161,12 +164,13 @@ public class SectionBuilderMixin {
     }
 
     // RETURN: finalise mesh data and enqueue
-    @Inject(method = "build", at = @At("RETURN"))
+    @Inject(method = "compile", at = @At("RETURN"))
     private void rtxremix$onBuildReturn(
             ChunkSectionPos sectionPos,
             ChunkRendererRegion renderRegion,
             VertexSorter vertexSorter,
             BlockBufferAllocatorStorage allocatorStorage,
+            List<AddSectionGeometryEvent.AdditionalSectionRenderer> additionalRenderers,
             CallbackInfoReturnable<SectionBuilder.RenderData> cir) {
 
         try {
@@ -186,7 +190,7 @@ public class SectionBuilderMixin {
             rtxremix$tracyOuter.remove();
             rtxremix$tracyBlockLoop.remove();
             rtxremix$blockDataCaptureToken.remove();
-            // A build that throws skips this inject and stays counted; vanilla turns a
+            // A compile that throws skips this inject and stays counted; vanilla turns a
             // section build exception into a client crash, so the stale count cannot
             // outlive the session.
             VanillaSectionBuilds.endBuild(rtxremix$capturing());

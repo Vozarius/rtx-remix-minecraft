@@ -9,9 +9,9 @@ import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
-import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandler;
-import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandlerRegistry;
-import net.fabricmc.fabric.api.renderer.v1.model.FabricBakedModel;
+import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
+import net.neoforged.neoforge.client.textures.FluidSpriteCache;
+import net.neoforged.neoforge.client.model.data.ModelData;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.BlockState;
@@ -33,7 +33,6 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.random.LocalRandom;
-import net.minecraft.util.math.random.Random;
 import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockRenderView;
@@ -42,7 +41,6 @@ import net.minecraft.world.BlockView;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * Per-block mesh emission for RTX Remix, designed to be driven from
@@ -64,6 +62,9 @@ import java.util.function.Supplier;
  */
 public final class BlockQuadEmitter {
 
+    private static final RenderLayer[] CHUNK_LAYERS =
+            RenderLayer.getBlockLayers().toArray(RenderLayer[]::new);
+
     private static final Direction[] HORIZONTAL_DIRECTIONS = {
         Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
     };
@@ -76,7 +77,7 @@ public final class BlockQuadEmitter {
     private static final ThreadLocal<Boolean> threadNamed =
             ThreadLocal.withInitial(() -> Boolean.FALSE);
 
-    private final RemixRenderContext renderContext = new RemixRenderContext();
+    private final Sprite[] fluidSprites = new Sprite[3];
     private final LocalRandom random = new LocalRandom(42);
     private final BlockPos.Mutable mutablePos = new BlockPos.Mutable();
     private final BlockPos.Mutable neighborPos = new BlockPos.Mutable();
@@ -135,11 +136,6 @@ public final class BlockQuadEmitter {
      * pickle cluster rotates its pickles around the block.
      */
     private long modelRandomSeed = 42L;
-
-    private final Supplier<Random> randomSupplier = () -> {
-        random.setSeed(modelRandomSeed);
-        return random;
-    };
 
     // Per-section state set by beginSection / processBlock
     /**
@@ -304,7 +300,7 @@ public final class BlockQuadEmitter {
         // frames agree for every vanilla block; a modded or resource-pack rule
         // on an offset block would need the same offset passed into begin() and
         // into the LightEntry positions.
-        modelSampling.begin(blockRenderManager, state, state.getRenderingSeed(pos));
+        modelSampling.begin(blockRenderManager, state, state.getRenderingSeed(pos), (BlockRenderView) world, pos);
         List<LightEntry> resolvedLights = BlockLightRuleManager.resolve(state, pos, modelSampling);
         lights.addAll(resolvedLights);
     }
@@ -313,7 +309,7 @@ public final class BlockQuadEmitter {
      * Emits block model quads for the current block. Called from the
      * isOpaqueFullCube redirect for blocks vanilla would hand to renderBlock,
      * a call the build then skips by reporting the block invisible. Bypasses
-     * FRAPI/Indigo and writes directly to the DirectQuadWriter.
+     * the OpenGL renderer and writes directly to the DirectQuadWriter.
      */
     public void emitBlock(BlockState state, BlockPos pos, BlockRenderView world) {
         blockCount++;
@@ -353,12 +349,14 @@ public final class BlockQuadEmitter {
         }
 
         BakedModel model = blockRenderManager.getModel(state);
-        String layerName = classifyBlockLayer(state);
 
-        if (model instanceof FabricBakedModel fbm && !fbm.isVanillaAdapter()) {
-            emitFrapiBlock(world, state, model, fbm, layerName, lx, ly, lz);
-        } else {
-            emitVanillaBlock(world, state, model, layerName, lx, ly, lz);
+        ModelData data = model.getModelData(world, mutablePos, state, world.getModelData(mutablePos));
+        random.setSeed(modelRandomSeed);
+        var renderTypes = model.getRenderTypes(state, random, data);
+        for (RenderLayer layer : CHUNK_LAYERS) {
+            if (!renderTypes.contains(layer)) continue;
+            String name = classifyBlockLayer(state, layer);
+            emitVanillaBlock(world, state, model, name, lx, ly, lz, data, layer);
         }
     }
 
@@ -396,7 +394,7 @@ public final class BlockQuadEmitter {
 
     private void emitVanillaBlock(BlockRenderView world, BlockState state,
                                    BakedModel model, String layerName,
-                                   float lx, float ly, float lz) {
+                                   float lx, float ly, float lz, ModelData data, RenderLayer layer) {
 
         for (Direction dir : ALL_DIRECTIONS) {
             if (dir != null && !shouldDrawBlockSide(world, state, dir)) {
@@ -404,7 +402,7 @@ public final class BlockQuadEmitter {
             }
 
             random.setSeed(modelRandomSeed);
-            List<BakedQuad> bakedQuads = model.getQuads(state, dir, random);
+            List<BakedQuad> bakedQuads = model.getQuads(state, dir, random, data, layer);
 
             for (BakedQuad bq : bakedQuads) {
                 stageBakedQuad(bq, layerName, state, world, lx, ly, lz);
@@ -501,54 +499,19 @@ public final class BlockQuadEmitter {
                 null, 0, 0, 1, 1, layerName, texManager);
     }
 
-    // --- FRAPI model path ---
-
-    private BlockState frapiState;
-    private BlockRenderView frapiWorld;
-
-    private boolean frapiCullTest(Direction dir) {
-        return !shouldDrawBlockSide(frapiWorld, frapiState, dir);
-    }
-
-    private void emitFrapiBlock(BlockRenderView world, BlockState state,
-                                 BakedModel model, FabricBakedModel fbm,
-                                 String layerName, float lx, float ly, float lz) {
-
-        frapiState = state;
-        frapiWorld = world;
-
-        renderContext.prepare(world, state, mutablePos.toImmutable(), this::frapiCullTest);
-
-        fbm.emitBlockQuads(world, state, mutablePos.toImmutable(), randomSupplier, renderContext);
-
-        List<SectionBlockData.BlockQuad> frapiQuads = renderContext.harvest();
-        for (SectionBlockData.BlockQuad fq : frapiQuads) {
-            float[] fqPos = fq.positions();
-            for (int v = 0; v < 4; v++) {
-                tempPositions[v * 3]     = fqPos[v * 3]     + lx;
-                tempPositions[v * 3 + 1] = fqPos[v * 3 + 1] + ly;
-                tempPositions[v * 3 + 2] = fqPos[v * 3 + 2] + lz;
-            }
-
-            writer.stageQuad(tempPositions, fq.uvs(), fq.nx(), fq.ny(), fq.nz(),
-                    fq.color(), fq.spriteId(),
-                    fq.spriteU0(), fq.spriteV0(), fq.spriteU1(), fq.spriteV1(),
-                    layerName);
-        }
-
-        writer.flushBlock(texManager);
-    }
-
     // --- Fluid geometry ---
 
     private void emitFluidQuads(BlockRenderView world, FluidState fluidState,
                                  int lx, int ly, int lz) {
-        FluidRenderHandler handler = FluidRenderHandlerRegistry.INSTANCE.get(fluidState.getFluid());
+        IClientFluidTypeExtensions handler = IClientFluidTypeExtensions.of(fluidState);
         if (handler == null) return;
 
         fluidPos.set(baseX + lx, baseY + ly, baseZ + lz);
 
-        Sprite[] fluidSprites = handler.getFluidSprites(world, fluidPos, fluidState);
+        fluidSprites[0] = FluidSpriteCache.getSprite(handler.getStillTexture(fluidState, world, fluidPos));
+        fluidSprites[1] = FluidSpriteCache.getSprite(handler.getFlowingTexture(fluidState, world, fluidPos));
+        Identifier overlay = handler.getOverlayTexture(fluidState, world, fluidPos);
+        fluidSprites[2] = overlay == null ? null : FluidSpriteCache.getSprite(overlay);
         if (fluidSprites == null || fluidSprites.length < 2) return;
 
         boolean isLava = fluidState.isIn(FluidTags.LAVA);
@@ -556,7 +519,7 @@ public final class BlockQuadEmitter {
         String layer = isLava ? "solid" : "translucent";
         int fluidColor = isWater
                 ? getCachedWaterColor(handler, world, fluidState, lx, ly, lz)
-                : handler.getFluidColor(world, fluidPos, fluidState);
+                : handler.getTintColor(fluidState, world, fluidPos);
         int r = (fluidColor >> 16) & 0xFF, g = (fluidColor >> 8) & 0xFF, b = fluidColor & 0xFF;
         int color = 0xFF000000 | (r << 16) | (g << 8) | b;
 
@@ -883,12 +846,12 @@ public final class BlockQuadEmitter {
         return count > 0 ? totalHeight / count : 0.5f;
     }
 
-    private int getCachedWaterColor(FluidRenderHandler handler, BlockRenderView world,
+    private int getCachedWaterColor(IClientFluidTypeExtensions handler, BlockRenderView world,
                                     FluidState fluidState, int lx, int ly, int lz) {
         int cell = ((ly >> 3) << 4) | ((lz >> 2) << 2) | (lx >> 2);
         int bit = 1 << cell;
         if ((waterColorKnownMask & bit) == 0) {
-            waterColorCache[cell] = handler.getFluidColor(world, fluidPos, fluidState);
+            waterColorCache[cell] = handler.getTintColor(fluidState, world, fluidPos);
             waterColorKnownMask |= bit;
         }
         return waterColorCache[cell];
@@ -992,13 +955,16 @@ public final class BlockQuadEmitter {
      * question, so it shades as its placed counterpart does.
      */
     public static String classifyBlockLayer(BlockState state) {
+        return classifyBlockLayer(state, RenderLayers.getBlockLayer(state));
+    }
+
+    private static String classifyBlockLayer(BlockState state, RenderLayer layer) {
         // Vanilla draws clear glass as a cutout: the texture is alpha 0 between
         // the frame pixels and the GL path simply discards those. Remix can
         // refract through it instead, so clear glass takes its own layer and a
         // translucent material with the frame as a diffuse layer.
         // Stained glass is already translucent and keeps vanilla's layer.
         if (state.isOf(Blocks.GLASS) || state.isOf(Blocks.GLASS_PANE)) return "glass";
-        RenderLayer layer = RenderLayers.getBlockLayer(state);
         if (layer == RenderLayer.getSolid()) return "solid";
         if (layer == RenderLayer.getCutoutMipped()) return "cutout_mipped";
         if (layer == RenderLayer.getCutout()) return "cutout";

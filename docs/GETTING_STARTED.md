@@ -163,7 +163,7 @@ The Java wrapper and JNI bridge are tracked under `rtxremix-java/` and arrive
 with the clone; no recursive checkout or hook setup is needed.
 
 `tools\rtx.bat launch` fetches a missing runtime and builds the mod and bridge
-with Gradle. It installs the mod, the pinned Fabric API, the runtime,
+with Gradle. It installs the mod, the runtime,
 `rtx.conf`, the gameplay conf payload, and the runtime textures into this
 checkout's Prism instance, then starts Minecraft at the main menu through
 Prism and waits until the game exits. Prism's own console output stays out of
@@ -174,7 +174,7 @@ arguments opens the [developer dashboard](../tools/docs/LAUNCHER.md) instead,
 which launches into the pinned demo world.
 
 Each launch writes the enabled resource packs in the game directory's
-`options.txt`: vanilla, then Fabric's `fabric` pack with the built-in baseline,
+`options.txt`: vanilla, then NeoForge's `mod_resources` pack with the built-in baseline,
 then any world packs and the selected art pack. It removes an old generated
 `rtx-remix` baseline pack, which it recognizes by its metadata and texture
 inventory, leaving other packs alone.
@@ -236,8 +236,8 @@ In `logs/latest.log` in the game directory, the exact success message is
 `Failed to initialize RTX Remix` message. The similarly worded mod-entrypoint
 startup message with a capital `Renderer` is not proof of native initialization.
 
-The baseline PBR textures are built into the mod JAR and load through Fabric's
-`fabric` resource pack, below user packs. No separate baseline pack needs
+The baseline PBR textures are built into the mod JAR and load through NeoForge's
+`mod_resources` resource pack, below user packs. No separate baseline pack needs
 enabling.
 
 The first launch of a new runtime compiles shaders, so expect a partial or empty
@@ -260,8 +260,7 @@ validation of native integration.
 
 The JAR from `package` is the one players get: it embeds the runtime, gameplay
 conf payload, runtime textures, and baseline PBR textures. To try it in a
-normal installation of Minecraft 1.21.1 that already has Fabric Loader and
-Fabric API, drop it into the instance's `mods` folder; nothing else is needed.
+normal installation of Minecraft 1.21.1 that already has NeoForge 21.1.242 or newer, drop it into the instance's `mods` folder; nothing else is needed.
 The release archive's installer also migrates old generated baseline packs and
 preserves user-pack ordering.
 
@@ -342,7 +341,7 @@ prerequisite described in [Get A Runtime](#get-a-runtime).
 | Produce an artifact | `gradlew build`, `gradlew package`, or `gradlew releaseArchive` | None |
 | Test inside an existing Microsoft Launcher install | `tools\rtx.bat install` after `gradlew build` | `%APPDATA%\.minecraft`, or `--game-dir DIR` |
 
-`build.gradle` also keeps `runClient`, Fabric's standard Gradle task. It runs
+`build.gradle` also keeps `runClient`, NeoForge's standard Gradle task. It runs
 from the repository-local `run/` directory, not the Prism instance, so the two
 share no saves, settings, or logs. The developer tools do not use it.
 
@@ -355,8 +354,8 @@ it. Build, then install from the repository root:
 ```
 
 The CLI bootstrap manages uv and its Python environment. The target installation
-must already have a compatible Fabric Loader profile and Fabric API. The command
-warns if Fabric API is missing; it does not install Fabric or launch Minecraft.
+must already have a compatible NeoForge profile. The command
+does not install NeoForge or launch Minecraft.
 Add `--game-dir DIR` to select another installation and `--arch win64` or
 `--arch arm64` to select its architecture. Relative paths use the repository
 root. Without `--arch`, `REMIX_ARCH` wins, then the host architecture.
@@ -365,7 +364,7 @@ The command installs the newest non-sources development JAR, the staged runtime
 from `remix-runtime/<arch>/`, the matching bridge from `build/native/<arch>/`,
 `packaging/rtx.conf`, the `packaging/rtx-remix/` gameplay conf payload, and runtime
 textures. Baseline PBR textures are built into the JAR. The command removes its
-former generated `rtx-remix-labpbr` pack and orders vanilla and Fabric below
+former generated `rtx-remix-labpbr` pack and orders vanilla and NeoForge below
 existing user packs. Shipped gameplay confs are refreshed while extra
 author-created profiles are preserved. An unchanged runtime is not recopied,
 but the bridge and other payloads are always refreshed.

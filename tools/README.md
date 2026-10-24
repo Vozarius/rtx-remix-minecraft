@@ -134,17 +134,17 @@ the second benchmarks a save you imported and recorded a camera for.
   `hang-dumps/` root in this checkout's game directory without touching any
   process.
 - `rtx.bat install [--game-dir DIR] [--arch win64|arm64]` installs an already-built
-  development mod into an existing Fabric installation. It defaults to
+  development mod into an existing NeoForge installation. It defaults to
   `%APPDATA%\.minecraft` and installs the runtime, JNI bridge, gameplay confs,
   and textures. The baseline materials are built into the mod JAR, not copied
   as a separate pack. It runs `packaging/migrate_resource_packs.ps1` with
   `-LegacyPackName rtx-remix-labpbr` to retire the recognized old baseline,
-  preserve user packs and their order, and place `vanilla` then `fabric` below
+  preserve user packs and their order, and place `vanilla` then `mod_resources` below
   them in existing `options.txt`. A migration failure makes installation fail.
   `REMIX_ARCH` overrides host architecture, `REMIX_BUILD` selects a custom
   runtime, and `REMIX_FORCE_SDK_COPY=1` bypasses the runtime copy marker.
   Relative paths use the repository root. It neither builds nor launches
-  Minecraft and does not manage Fabric Loader or Fabric API.
+  Minecraft and does not manage NeoForge or NeoForge.
 - `rtx.bat textures water-normals [--seed N] [--out PATH]` generates
   `water_normals_flipbook.dds` from code, by default under `build/textures/`:
   120 frames of a tiling ocean surface that loops every six seconds, packed

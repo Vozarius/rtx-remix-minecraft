@@ -7,7 +7,7 @@ package com.nvidia.rtxremix.minecraft.weather;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.systems.VertexSorter;
 import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
-import net.fabricmc.fabric.api.client.rendering.v1.CoreShaderRegistrationCallback;
+import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.render.BufferRenderer;
@@ -60,12 +60,13 @@ public final class RemixWeatherRenderer {
     private int lastDrawCount;
     private int lastQuadCount;
 
-    public static void registerShaders() {
-        CoreShaderRegistrationCallback.EVENT.register(context ->
-                context.register(
-                        RAIN_SHADER,
-                        VertexFormats.POSITION_TEXTURE_COLOR_LIGHT,
-                        shader -> rainShader = shader));
+    public static void registerShaders(RegisterShadersEvent event) {
+        try {
+            event.registerShader(new ShaderProgram(event.getResourceProvider(), RAIN_SHADER,
+                    VertexFormats.POSITION_TEXTURE_COLOR_LIGHT), shader -> rainShader = shader);
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("Cannot load the Remix rain shader", e);
+        }
     }
 
     public void beginCaptureFrame(LightmapTextureManager lightmapTextureManager) {

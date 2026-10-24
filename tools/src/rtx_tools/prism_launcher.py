@@ -12,7 +12,6 @@ game's JVM.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -250,13 +249,9 @@ class PrismLauncher:
         project = util.PROJECT_DIR
         gradle = [str(project / "gradlew.bat")]
         if build:
-            gradle += ["build", "-x", "test", "stageFabricApi", f"-Parch={arch}", "--console=plain", "--quiet"]
-        else:
-            gradle += ["stageFabricApi", "--quiet"]
-        util.run(gradle, cwd=project, env=runner.gradle_env())
+            gradle += ["build", "-x", "test", f"-Parch={arch}", "--console=plain", "--quiet"]
+            util.run(gradle, cwd=project, env=runner.gradle_env())
         self._runtime_probe = runtime_compat.warn_if_incompatible(project, arch)
-        # Before the install, which warns about a mods folder without Fabric API.
-        self._install_fabric_api(project / "build" / "dev" / "fabric-api.jar")
         if install.install_development_build(project, game_dir=self.game_dir, arch=arch) != 0:
             raise LaunchBlocked(f"Could not install the development build into {self.game_dir}; see the errors above.")
 
@@ -443,28 +438,6 @@ class PrismLauncher:
                 f"Install a JDK {prism.GAME_JAVA_MAJOR} for {arch}, set JAVA_HOME to it, and run the command again."
             )
         return home / "bin" / "javaw.exe"
-
-    def _install_fabric_api(self, jar: Path) -> None:
-        if not jar.is_file():
-            raise LaunchBlocked(
-                f"{jar} is missing. Run gradlew.bat stageFabricApi in the checkout, which writes it, and fix any "
-                "errors it reports, then run the command again."
-            )
-        mods = self.game_dir / "mods"
-        target = mods / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar"
-        path = mods
-        try:
-            mods.mkdir(parents=True, exist_ok=True)
-            for path in [other for other in mods.glob("fabric-api-*.jar") if other != target]:
-                path.unlink()
-            path = target
-            shutil.copy2(jar, target)
-        except OSError as exc:
-            # shutil.copy2's CopyFile2 errors carry no strerror.
-            raise LaunchBlocked(
-                f"Cannot update {path} ({exc.strerror or exc}). Close any Minecraft still running from this checkout "
-                "and run the command again."
-            ) from exc
 
     def _first_launch(self) -> bool:
         """Whether Prism may still have Minecraft to download: until the game has run in this instance and Prism holds

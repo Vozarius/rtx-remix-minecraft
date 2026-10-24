@@ -6,7 +6,7 @@ package com.nvidia.rtxremix.minecraft;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.ParseResults;
-import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.minecraft.server.command.ServerCommandSource;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
@@ -20,22 +20,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RtxRemixModCommandTest {
 
     @Test
+    void enablingRtxDoesNotClaimToRenderWhenInitializationFailed() {
+        assertEquals("RTX Rendering: unavailable (renderer not initialized)",
+                RtxRemixMod.rtxRenderingStatus(true, false));
+        assertEquals("RTX Rendering: ON", RtxRemixMod.rtxRenderingStatus(true, true));
+        assertEquals("RTX Rendering: OFF", RtxRemixMod.rtxRenderingStatus(false, false));
+        assertEquals("RTX Rendering: OFF", RtxRemixMod.rtxRenderingStatus(false, true));
+    }
+
+    @Test
     void cameraPlaySupportsDefaultTimeAndExplicitClockModes() {
-        CommandDispatcher<FabricClientCommandSource> dispatcher = cameraDispatcher();
+        CommandDispatcher<ServerCommandSource> dispatcher = cameraDispatcher();
 
         assertParses(dispatcher, "camera play demo");
         assertParses(dispatcher, "camera play demo time");
         assertParses(dispatcher, "camera play demo fixed-60");
 
-        ParseResults<FabricClientCommandSource> invalid =
+        ParseResults<ServerCommandSource> invalid =
                 dispatcher.parse("camera play demo bogus", null);
         assertTrue(invalid.getReader().canRead() || !invalid.getExceptions().isEmpty());
     }
 
     @Test
     void cameraPlaySuggestsOnlySupportedClockModes() {
-        CommandDispatcher<FabricClientCommandSource> dispatcher = cameraDispatcher();
-        ParseResults<FabricClientCommandSource> parsed =
+        CommandDispatcher<ServerCommandSource> dispatcher = cameraDispatcher();
+        ParseResults<ServerCommandSource> parsed =
                 dispatcher.parse("camera play demo ", null);
 
         Set<String> suggestions = dispatcher.getCompletionSuggestions(parsed).join()
@@ -49,7 +58,7 @@ class RtxRemixModCommandTest {
 
     @Test
     void omittedModeRemainsExecutableAtCameraNameNode() {
-        CommandDispatcher<FabricClientCommandSource> dispatcher = cameraDispatcher();
+        CommandDispatcher<ServerCommandSource> dispatcher = cameraDispatcher();
         var nameNode = dispatcher.getRoot()
                 .getChild("camera")
                 .getChild("play")
@@ -61,17 +70,17 @@ class RtxRemixModCommandTest {
         assertNotNull(nameNode.getChild("fixed-60").getCommand());
     }
 
-    private static CommandDispatcher<FabricClientCommandSource> cameraDispatcher() {
-        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+    private static CommandDispatcher<ServerCommandSource> cameraDispatcher() {
+        CommandDispatcher<ServerCommandSource> dispatcher = new CommandDispatcher<>();
         dispatcher.register(RtxRemixMod.cameraCommand());
         return dispatcher;
     }
 
     private static void assertParses(
-            CommandDispatcher<FabricClientCommandSource> dispatcher,
+            CommandDispatcher<ServerCommandSource> dispatcher,
             String command
     ) {
-        ParseResults<FabricClientCommandSource> parsed = dispatcher.parse(command, null);
+        ParseResults<ServerCommandSource> parsed = dispatcher.parse(command, null);
         assertFalse(parsed.getReader().canRead(), command);
         assertTrue(parsed.getExceptions().isEmpty(), command);
     }

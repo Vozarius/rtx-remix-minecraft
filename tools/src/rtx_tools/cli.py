@@ -772,15 +772,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "install",
-        help="install a built development mod into an existing Fabric installation",
+        help="install a built development mod into an existing NeoForge installation",
         description=(
             "Installs the newest non-sources development JAR from build/libs, the\n"
             "staged runtime, JNI bridge, gameplay conf payload, and runtime textures.\n"
             "Baseline PBR textures are built into the JAR; packaging/migrate_resource_packs.ps1\n"
             "removes the retired generated baseline and preserves user-pack ordering.\n"
             "Build first with gradlew.bat build.\n"
-            "The game directory must already have Fabric Loader and Fabric API;\n"
-            "a missing Fabric API JAR produces a warning. This does not launch the game."
+            "The game directory must already have NeoForge 21.1.242 or newer;\n"
+            "this command does not install NeoForge or launch the game."
         ),
         epilog=(
             "REMIX_BUILD overrides remix-runtime/<arch> with a custom runtime directory.\n"

@@ -116,8 +116,18 @@ def public_tracked_files():
     tracked = subprocess.run(["git", "ls-files", "-z"], cwd=REPO_ROOT, capture_output=True, check=True).stdout.decode(
         "utf-8", "replace"
     )
+    deleted = set(
+        subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=D", "-z"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=True,
+        )
+        .stdout.decode("utf-8", "replace")
+        .split("\0")
+    )
     for name in filter(None, tracked.split("\0")):
-        if name == "tools/tests/benchmark/test_public_boundary.py":
+        if name in deleted or name == "tools/tests/benchmark/test_public_boundary.py":
             continue
         yield name, REPO_ROOT / name
 
@@ -306,25 +316,33 @@ def tracked_file_leaks(rows):
 
 
 class PublicLeakPatternTests(unittest.TestCase):
-    def test_tracked_sweep_includes_every_tree_except_this_module(self):
+    def test_tracked_sweep_includes_current_files_and_skips_deletions(self):
         names = [
             "README.md",
             "tools/src/example.py",
             "packman/config.packman.xml",
             "rtxremix-java/native/example.cpp",
             "tools/tests/benchmark/test_public_boundary.py",
+            "deleted.txt",
         ]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for name in names:
+            for name in names[:-1]:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("fixture", encoding="utf-8")
             with (
                 mock.patch.dict(globals(), REPO_ROOT=root),
-                mock.patch.object(subprocess, "run", return_value=mock.Mock(stdout="\0".join(names).encode("utf-8"))),
+                mock.patch.object(
+                    subprocess,
+                    "run",
+                    side_effect=[
+                        mock.Mock(stdout="\0".join(names).encode("utf-8")),
+                        mock.Mock(stdout=b"deleted.txt\0"),
+                    ],
+                ),
             ):
-                self.assertEqual(names[:-1], [name for name, _ in public_tracked_files()])
+                self.assertEqual(names[:-2], [name for name, _ in public_tracked_files()])
 
     def test_path_exceptions_never_exempt_a_directory(self):
         self.assertFalse(allowlisted("packaging/licenses/new.txt", {"packaging/licenses"}))

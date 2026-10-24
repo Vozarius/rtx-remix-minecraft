@@ -46,8 +46,8 @@ import com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter;
 import com.nvidia.rtxremix.minecraft.entity.RemixFirstPersonPass;
 import com.nvidia.rtxremix.minecraft.cloud.CloudRenderer;
 import it.unimi.dsi.fastutil.longs.LongSet;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.neoforge.client.event.RenderHighlightEvent;
+import net.neoforged.fml.loading.FMLPaths;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.enums.CameraSubmersionType;
 import net.minecraft.client.MinecraftClient;
@@ -141,7 +141,7 @@ public class RemixRenderer {
     // submitted through the entity submitter as terrain decals
     private RemixBlockDamagePass blockDamagePass;
 
-    // Targeted-block outline: Fabric event capture + dynamic Remix submission
+    // Targeted-block outline: NeoForge event capture + dynamic Remix submission
     private RemixBlockOutlinePass blockOutlinePass;
 
     // Particle rendering: atlas manager + per-frame renderer
@@ -237,7 +237,7 @@ public class RemixRenderer {
             
             LOGGER.info("Got window handle: 0x{}", Long.toHexString(windowHandle));
             
-            Path dll = runtimeDll(FabricLoader.getInstance().getGameDir());
+            Path dll = runtimeDll(FMLPaths.GAMEDIR.get());
             if (!Files.isRegularFile(dll)) {
                 throw new IllegalStateException("RTX Remix runtime not found at " + dll
                         + "; reinstall the mod or run gradlew setupRuntime");
@@ -400,7 +400,7 @@ public class RemixRenderer {
             if (!remixApi.isConfigLayersSupported()) {
                 throw new IllegalStateException("runtime lacks the config-layer API (needs API >= 0.9.0)");
             }
-            Path gameDir = FabricLoader.getInstance().getGameDir();
+            Path gameDir = FMLPaths.GAMEDIR.get();
             Path waterConf = gameDir.resolve("rtx-remix").resolve("mods").resolve("minecraft-logic")
                     .resolve("confs").resolve("water.conf");
             if (!Files.exists(waterConf)) {
@@ -1443,10 +1443,9 @@ public class RemixRenderer {
      * the same frame.
      */
     public void captureBlockOutline(
-            WorldRenderContext context,
-            WorldRenderContext.BlockOutlineContext outline) {
+            RenderHighlightEvent.Block event) {
         if (blockOutlinePass != null) {
-            blockOutlinePass.captureBlockOutline(context, outline);
+            blockOutlinePass.captureBlockOutline(event);
         }
     }
     

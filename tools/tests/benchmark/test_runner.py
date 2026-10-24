@@ -413,7 +413,7 @@ class RunnerTests(unittest.TestCase):
             runner.write_options({"render": {}, "resourcePacks": ["world-demo-pbr"]})
 
             options = (Path(tmp) / "options.txt").read_text(encoding="utf-8")
-            self.assertIn('resourcePacks:["vanilla","fabric","file/world-demo-pbr"]', options)
+            self.assertIn('resourcePacks:["vanilla","mod_resources","file/world-demo-pbr"]', options)
 
     def test_fov_option_value_preserves_legacy_slider_values(self):
         self.assertEqual(runner.minecraft_fov_option_value(1.0), "1")
@@ -820,7 +820,7 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse((run_dir / "resourcepacks" / "RtxRemix-LabPBR").exists())
             self.assertTrue((run_dir / "resourcepacks" / "world-demo-pbr" / "pack.mcmeta").exists())
             options = (run_dir / "options.txt").read_text(encoding="utf-8")
-            self.assertIn('resourcePacks:["vanilla","fabric","file/world-demo-pbr"]', options)
+            self.assertIn('resourcePacks:["vanilla","mod_resources","file/world-demo-pbr"]', options)
 
     def test_only_an_interactive_install_survives_a_failed_pinned_art_pack_fetch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -856,7 +856,7 @@ class RunnerTests(unittest.TestCase):
 
             self.assertTrue((run_dir / "saves" / "rtx-benchmark" / "level.dat").exists())
             options = (run_dir / "options.txt").read_text(encoding="utf-8")
-            self.assertIn('resourcePacks:["vanilla","fabric"]', options)
+            self.assertIn('resourcePacks:["vanilla","mod_resources"]', options)
             self.assertIn("texture@0.56.0", stderr.getvalue())
 
     def test_install_fixtures_stages_configured_world_resource_pack_zip(self):
@@ -887,7 +887,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual((run_dir / "resourcepacks" / "world-demo-pbr.zip").read_bytes(), b"zip")
             self.assertFalse((run_dir / "resourcepacks" / "rtx-remix").exists())
             options = (run_dir / "options.txt").read_text(encoding="utf-8")
-            self.assertIn('resourcePacks:["vanilla","fabric","file/world-demo-pbr.zip"]', options)
+            self.assertIn('resourcePacks:["vanilla","mod_resources","file/world-demo-pbr.zip"]', options)
 
     def test_install_fixtures_drops_retired_baseline_from_legacy_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -911,7 +911,7 @@ class RunnerTests(unittest.TestCase):
                 runner.install_fixtures(config, runner.configure_benchmark_selection(config))
 
             self.assertIn(
-                'resourcePacks:["vanilla","fabric","file/world-demo-pbr"]',
+                'resourcePacks:["vanilla","mod_resources","file/world-demo-pbr"]',
                 (run_dir / "options.txt").read_text(encoding="utf-8"),
             )
             migration_logs = [call for call in log.call_args_list if "retired baseline" in str(call)]
@@ -979,7 +979,7 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue((staged.parent / ".rtx-remix-world-pack").is_file())
             self.assertFalse((pack / ".rtx-remix-world-pack").exists())
             options = (run_dir / "options.txt").read_text(encoding="utf-8")
-            self.assertIn('resourcePacks:["vanilla","fabric","file/rtx-remix"]', options)
+            self.assertIn('resourcePacks:["vanilla","mod_resources","file/rtx-remix"]', options)
 
     def test_install_fixtures_accepts_world_resource_pack_zip_named_rtx_remix(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1004,7 +1004,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual((run_dir / "resourcepacks" / "rtx-remix.zip").read_bytes(), b"world zip")
             self.assertNotIn("retired baseline", stderr.getvalue())
             options = (run_dir / "options.txt").read_text(encoding="utf-8")
-            self.assertIn('resourcePacks:["vanilla","fabric","file/rtx-remix.zip"]', options)
+            self.assertIn('resourcePacks:["vanilla","mod_resources","file/rtx-remix.zip"]', options)
 
     def test_install_fixtures_rejects_missing_configured_world_resource_pack(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -3447,7 +3447,7 @@ class LiveClientPreflightTests(unittest.TestCase):
             libraries = (checkout / "run-prism" / "libraries").as_posix()
             return (
                 f'"C:/jdk/bin/javaw.exe" -Djava.library.path={instance}/natives '
-                f"-cp {libraries}/net/fabricmc/fabric-loader.jar org.prismlauncher.EntryPoint"
+                f"-cp {libraries}/net/fabricmc/neoforge.jar org.prismlauncher.EntryPoint"
             )
 
         loom_classes = rf"C:\jdk\bin\java.exe -cp {project}\build\classes\java\main net.fabricmc.devlaunchinjector.Main"

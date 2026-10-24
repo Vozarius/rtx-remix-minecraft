@@ -5,6 +5,9 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import net.minecraft.block.BlockState;
+import net.minecraft.client.render.RenderLayer;
+import net.neoforged.neoforge.client.model.data.ModelData;
+import net.neoforged.neoforge.client.model.data.MultipartModelData;
 import net.minecraft.client.render.model.BakedModel;
 import net.minecraft.client.render.model.BakedQuad;
 import net.minecraft.client.render.model.MultipartBakedModel;
@@ -59,6 +62,8 @@ public abstract class MultipartBakedModelMixin {
             BlockState state,
             Direction face,
             Random random,
+            ModelData data,
+            RenderLayer layer,
             CallbackInfoReturnable<List<BakedQuad>> cir) {
         if (state == null) {
             cir.setReturnValue(Collections.emptyList());
@@ -80,7 +85,10 @@ public abstract class MultipartBakedModelMixin {
         boolean owned = false;
         for (int i = selected.nextSetBit(0); i >= 0; i = selected.nextSetBit(i + 1)) {
             partRandom.setSeed(seed);
-            List<BakedQuad> quads = components.get(i).getRight().getQuads(state, face, partRandom);
+            BakedModel part = components.get(i).getRight();
+            if (layer != null && !part.getRenderTypes(state, random, data).contains(layer)) continue;
+            List<BakedQuad> quads = part.getQuads(state, face, partRandom,
+                    MultipartModelData.resolve(data, part), layer);
             if (result == null) {
                 result = quads;
             } else {

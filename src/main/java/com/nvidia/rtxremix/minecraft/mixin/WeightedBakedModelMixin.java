@@ -5,6 +5,8 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import net.minecraft.block.BlockState;
+import net.minecraft.client.render.RenderLayer;
+import net.neoforged.neoforge.client.model.data.ModelData;
 import net.minecraft.client.render.model.BakedModel;
 import net.minecraft.client.render.model.BakedQuad;
 import net.minecraft.client.render.model.WeightedBakedModel;
@@ -49,6 +51,8 @@ public abstract class WeightedBakedModelMixin {
             BlockState state,
             Direction face,
             Random random,
+            ModelData data,
+            RenderLayer layer,
             CallbackInfoReturnable<List<BakedQuad>> cir) {
         int remaining = Math.abs((int) random.nextLong()) % totalWeight;
         List<Weighted.Present<BakedModel>> variants = models;
@@ -56,7 +60,7 @@ public abstract class WeightedBakedModelMixin {
             Weighted.Present<BakedModel> variant = variants.get(i);
             remaining -= variant.getWeight().getValue();
             if (remaining < 0) {
-                cir.setReturnValue(variant.data().getQuads(state, face, random));
+                cir.setReturnValue(variant.data().getQuads(state, face, random, data, layer));
                 return;
             }
         }

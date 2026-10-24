@@ -4,27 +4,17 @@
  */
 package com.nvidia.rtxremix.minecraft.block;
 
-import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.light.OverridesItemLight;
-import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.FacingBlock;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
 import net.minecraft.sound.BlockSoundGroup;
 import net.minecraft.state.StateManager;
 import net.minecraft.util.BlockMirror;
 import net.minecraft.util.BlockRotation;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Direction;
 
 /**
@@ -64,15 +54,6 @@ public abstract class SpotLightBlock extends FacingBlock implements OverridesIte
     /** Full block light level, matching a lantern. */
     protected static final int LUMINANCE = 15;
 
-    /**
-     * Vanilla's "Functional Blocks" creative tab, where torches and lanterns live.
-     *
-     * <p>Built from the registry id rather than {@code ItemGroups.FUNCTIONAL},
-     * which is private in 1.21.1 and would otherwise need an access-widener entry.
-     */
-    private static final RegistryKey<ItemGroup> FUNCTIONAL_BLOCKS =
-            RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.ofVanilla("functional_blocks"));
-
     private final LightEntry.ColorOverride beamColor;
 
     protected SpotLightBlock(AbstractBlock.Settings settings, LightEntry.ColorOverride beamColor) {
@@ -96,25 +77,6 @@ public abstract class SpotLightBlock extends FacingBlock implements OverridesIte
      */
     public LightEntry.ColorOverride beamColor() {
         return beamColor;
-    }
-
-    /**
-     * Registers every beacon variant. Called from
-     * {@link RtxRemixCommonMod#onInitialize()}, the {@code main} entrypoint, not
-     * the client one, because blocks live in a synced registry. Everything this
-     * method touches therefore has to be loadable on a dedicated server.
-     */
-    public static void registerAll() {
-        register(CopperBeaconBlock.ID, CopperBeaconBlock.INSTANCE);
-        CopperBeaconBlockEntity.register();
-    }
-
-    /** Registers one variant, its item, and the creative tab entry. */
-    private static void register(String path, SpotLightBlock block) {
-        Identifier id = Identifier.of(RtxRemixCommonMod.MOD_ID, path);
-        Registry.register(Registries.BLOCK, id, block);
-        BlockItem item = Registry.register(Registries.ITEM, id, new BlockItem(block, new Item.Settings()));
-        ItemGroupEvents.modifyEntriesEvent(FUNCTIONAL_BLOCKS).register(entries -> entries.add(item));
     }
 
     @Override

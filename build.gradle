@@ -7,7 +7,7 @@ import javax.inject.Inject
 import org.gradle.process.ExecOperations
 
 plugins {
-    id 'fabric-loom' version '1.15.5'
+    id 'dev.architectury.loom' version '1.11.454'
     id 'java'
 }
 
@@ -114,7 +114,7 @@ ext.sdkExclusions = { details ->
 }
 
 base {
-    archivesName = 'rtx-remix-renderer'
+    archivesName = 'rtx-remix-renderer-neoforge'
 }
 def projectArchiveName = base.archivesName.get()
 
@@ -124,6 +124,8 @@ repositories {
         name = 'Fabric'
         url = 'https://maven.fabricmc.net/'
     }
+    maven { url = 'https://maven.architectury.dev/' }
+    maven { url = 'https://maven.neoforged.net/releases/' }
 }
 
 // Minecraft 1.21.x requires Java 21
@@ -145,17 +147,6 @@ sourceSets {
 
 loom {
     accessWidenerPath = file("src/main/resources/rtx-remix-renderer.accesswidener")
-
-    // Loom 1.15+ disabled the mixin annotation processor by default. We use
-    // mixins extensively (see src/main/resources/rtx-remix-renderer.mixins.json),
-    // so explicitly opt back into the legacy AP via the `mixin` extension's
-    // useLegacyMixinAp flag. The previous defaultRefmapName setting is no
-    // longer needed. Without it, Loom derives the refmap name from the
-    // project; our mixins.json doesn't reference the refmap by literal name,
-    // so the auto-derived name works fine.
-    mixin {
-        useLegacyMixinAp = true
-    }
 
     runs {
         client {
@@ -203,18 +194,14 @@ loom {
     }
 }
 
-// Fabric API (keep in sync with FABRIC_API_VERSION in packaging/installer.ps1,
-// which is what gets installed at runtime on the user's machine). One literal
-// serves both the compile dependency and stageFabricApi.
-def fabricApiCoordinate = "net.fabricmc.fabric-api:fabric-api:0.116.10+1.21.1"
-
 dependencies {
-    // Minecraft and Fabric
+    // NeoForge runs in Mojang names; Loom remaps the Yarn-named sources.
     minecraft "com.mojang:minecraft:1.21.1"
-    mappings "net.fabricmc:yarn:1.21.1+build.3:v2"
-    modImplementation "net.fabricmc:fabric-loader:0.16.5"
-
-    modImplementation fabricApiCoordinate
+    mappings loom.layered {
+        mappings "net.fabricmc:yarn:1.21.1+build.3:v2"
+        mappings "dev.architectury:yarn-mappings-patch-neoforge:1.21+build.6"
+    }
+    neoForge "net.neoforged:neoforge:21.1.242"
 
     // Testing
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
@@ -223,6 +210,14 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    dependsOn tasks.named('remapJar')
+    inputs.file(tasks.named('remapJar').flatMap { it.archiveFile })
+    doFirst {
+        systemProperty 'rtxremix.remappedJar', tasks.named('remapJar').get().archiveFile.get().asFile.absolutePath
+        systemProperty 'rtxremix.mojangJars', loom.getMinecraftJars(
+                net.fabricmc.loom.api.mappings.layered.MappingsNamespace.MOJANG)
+                .collect { it.toAbsolutePath().toString() }.join(File.pathSeparator)
+    }
     // Pin the per-frame install cap so tests don't depend on the CPU count
     systemProperty 'rtxremix.chunk.maxInstalledColumnsPerFrame', '8'
 }
@@ -237,7 +232,7 @@ processResources {
     inputs.property "gitShortHash", gitShortHash
     inputs.property "gitBranch", gitBranch
 
-    filesMatching("fabric.mod.json") {
+    filesMatching("META-INF/neoforge.mods.toml") {
         expand "version": resolvedBuildVersion
     }
     filesMatching("benchmark.properties") {
@@ -286,7 +281,7 @@ def fetchRuntimeSdkTasks = ['win64', 'arm64'].collectEntries { arch ->
                 logger.lifecycle("Pulling remix-sdk-${arch} -> ${targetDir}")
                 runtimeFetchServices.execOperations.exec {
                     workingDir packmanDirectory
-                    commandLine 'cmd', '/d', '/c', new File(packmanDirectory, 'packman.cmd').absolutePath,
+                    commandLine 'cmd', '/d', '/c', '.\\packman.cmd',
                             'pull', temporaryManifest.absolutePath, '-p', 'windows-x86_64'
                 }
             } finally {
@@ -432,18 +427,6 @@ tasks.named('classes') {
     dependsOn 'setupRuntime'
 }
 
-// A development launcher instance loads mods as a player's install does, so it
-// needs the published intermediary jar, not Loom's remapped copy. A detached,
-// non-transitive configuration resolves exactly the pinned coordinate and keeps
-// this task free of the native build and runtime staging.
-tasks.register('stageFabricApi', Copy) {
-    description = 'Copies the pinned Fabric API jar to build/dev/ for development launcher instances'
-    group = 'build'
-    from configurations.detachedConfiguration(dependencies.create(fabricApiCoordinate)).tap { transitive = false }
-    into layout.buildDirectory.dir('dev')
-    rename { 'fabric-api.jar' }
-}
-
 // build_native.bat writes the bridge to build/native/{win64|arm64}/, NOT into
 // remix-runtime/{arch}/ (a managed SDK directory is a junction into a shared cache,
 // so writing there would mutate every workspace pointing at it).
@@ -484,12 +467,15 @@ jar {
     }
 }
 
-// `build` leaves Loom's remapped lightweight JAR in build/libs for fast dev
-// iteration. packageJar starts with that already-remapped JAR and adds only the
+// `build` leaves Loom's remapped NeoForge lightweight JAR in build/libs for fast dev
+// iteration. packageJar starts with that Mojang-named JAR and adds only the
 // selected native payload, writing the distributable JAR to build/distributions.
 // Packaging therefore depends on an explicit task instead of guessing intent
 // from Gradle's command-line task names (`package` versus `:package`).
 def remapJarTask = tasks.named('remapJar')
+remapJarTask.configure {
+    atAccessWideners.add('rtx-remix-renderer.accesswidener')
+}
 def packageJarTask = tasks.register('packageJar', Zip) {
     description = 'Assembles the remapped distributable JAR with the selected platform SDKs bundled'
     group = 'build'
@@ -576,7 +562,7 @@ def verifyPackageJarTask = tasks.register('verifyPackageJar') {
         def archive = packageJarArchive.get().asFile
         def zip = new java.util.zip.ZipFile(archive)
         try {
-            def required = ['META-INF/MANIFEST.MF', 'fabric.mod.json', 'native/rtx.conf']
+            def required = ['META-INF/MANIFEST.MF', 'META-INF/neoforge.mods.toml', 'native/rtx.conf']
             buildArches.each { arch ->
                 required.add("native/remix-sdk-${arch}/d3d9.dll")
                 required.add("native/remix-sdk-${arch}/remixbridge.dll")

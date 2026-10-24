@@ -476,7 +476,7 @@ def write_instance(
     jvm_args: list[str],
 ) -> Path:
     """Write the instance's two files, replacing what is there, and return its game directory. The JSON pins Minecraft
-    and Fabric Loader to the versions packaging/installer.ps1 pins, and the game's heap is the last one `jvm_args`
+    and NeoForge to the versions packaging/installer.ps1 pins, and the game's heap is the last one `jvm_args`
     sets."""
     memory = _memory_settings(jvm_args)
     instance_args = instance_jvm_args(jvm_args)
@@ -514,9 +514,9 @@ def write_instance(
                     "version": installer_constant("MC_VERSION"),
                 },
                 {
-                    "cachedName": "Fabric Loader",
-                    "uid": "net.fabricmc.fabric-loader",
-                    "version": installer_constant("FABRIC_LOADER_VER"),
+                    "cachedName": "NeoForge",
+                    "uid": "net.neoforged",
+                    "version": installer_constant("NEOFORGE_VERSION"),
                 },
             ],
             "formatVersion": 1,

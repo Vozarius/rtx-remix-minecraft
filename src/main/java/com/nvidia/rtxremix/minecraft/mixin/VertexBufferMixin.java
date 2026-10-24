@@ -4,12 +4,12 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.nvidia.rtxremix.minecraft.gl.DynamicBufferUpload;
 import net.minecraft.client.gl.VertexBuffer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Redirect;
 
 import java.nio.ByteBuffer;
 
@@ -25,29 +25,28 @@ public abstract class VertexBufferMixin {
     private final DynamicBufferUpload.Storage rtxremix$vertexStorage = new DynamicBufferUpload.Storage();
     private final DynamicBufferUpload.Storage rtxremix$indexStorage = new DynamicBufferUpload.Storage();
 
-    @Redirect(method = "uploadVertexBuffer", at = @At(value = "INVOKE", target = rtxremix$GL_BUFFER_DATA))
-    private void rtxremix$uploadVertexData(int target, ByteBuffer data, int usage) {
-        rtxremix$upload(target, data, usage, rtxremix$vertexStorage);
+    @WrapOperation(method = "uploadVertexBuffer", at = @At(value = "INVOKE", target = rtxremix$GL_BUFFER_DATA))
+    private void rtxremix$uploadVertexData(int target, ByteBuffer data, int usage, Operation<Void> original) {
+        rtxremix$upload(target, data, usage, rtxremix$vertexStorage, original);
     }
 
-    // Both overloads are named explicitly: the refmap keys one selector string to one
-    // intermediary method, so a bare overloaded name would reach only one of them in a
-    // production (intermediary-mapped) client.
-    @Redirect(
+    // Explicit descriptors keep both overloads selected after production remapping.
+    @WrapOperation(
         method = {
             "uploadIndexBuffer(Lnet/minecraft/client/util/BufferAllocator$CloseableBuffer;)V",
             "uploadIndexBuffer(Lnet/minecraft/client/render/BuiltBuffer$DrawParameters;Ljava/nio/ByteBuffer;)Lcom/mojang/blaze3d/systems/RenderSystem$ShapeIndexBuffer;"
         },
         at = @At(value = "INVOKE", target = rtxremix$GL_BUFFER_DATA))
-    private void rtxremix$uploadIndexData(int target, ByteBuffer data, int usage) {
-        rtxremix$upload(target, data, usage, rtxremix$indexStorage);
+    private void rtxremix$uploadIndexData(int target, ByteBuffer data, int usage, Operation<Void> original) {
+        rtxremix$upload(target, data, usage, rtxremix$indexStorage, original);
     }
 
-    private static void rtxremix$upload(int target, ByteBuffer data, int usage, DynamicBufferUpload.Storage storage) {
+    private static void rtxremix$upload(int target, ByteBuffer data, int usage,
+                                      DynamicBufferUpload.Storage storage, Operation<Void> original) {
         if (DynamicBufferUpload.handles(usage)) {
             DynamicBufferUpload.upload(target, data, usage, storage);
         } else {
-            RenderSystem.glBufferData(target, data, usage);
+            original.call(target, data, usage);
         }
     }
 }

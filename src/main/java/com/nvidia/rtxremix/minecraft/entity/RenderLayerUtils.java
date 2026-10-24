@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.minecraft.mixin.RenderPhaseTextureAccessor;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderPhase;
 import net.minecraft.client.render.VertexFormatElement;
@@ -102,7 +103,7 @@ final class RenderLayerUtils {
             RenderPhase.TextureBase textureBase = phases.texture;
 
             if (textureBase instanceof RenderPhase.Texture texture) {
-                return texture.getId();
+                return ((RenderPhaseTextureAccessor) texture).rtxremix$getTextureId();
             }
         }
         return Optional.empty();

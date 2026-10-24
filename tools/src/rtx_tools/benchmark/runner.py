@@ -2546,9 +2546,9 @@ def write_options(config: dict, *, resource_pack_files: list[str] | None = None,
     fullscreen_resolution = fullscreen_resolution_option_value(override_width, override_height, pin_display=pin_display)
     if resource_pack_files is None:
         resource_pack_files = configured_resource_pack_names(config)
-    # The mod's built-in baseline rides in Fabric's pack, below every file/ pack.
+    # The mod's built-in baseline rides in NeoForge's pack, below every file/ pack.
     # Fabric appends its pack above user packs if options.txt omits it.
-    resource_pack_options = ["vanilla", "fabric", *(f"file/{file_name}" for file_name in resource_pack_files)]
+    resource_pack_options = ["vanilla", "mod_resources", *(f"file/{file_name}" for file_name in resource_pack_files)]
     values = {
         "enableVsync": "true" if render.get("vsync") else "false",
         "fullscreen": "true" if render.get("fullscreen") else "false",

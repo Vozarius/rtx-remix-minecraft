@@ -32,13 +32,16 @@ public abstract class WindowMixin {
         method = "<init>",
         at = @At(
             value = "INVOKE",
-            target = "Lorg/lwjgl/glfw/GLFW;glfwCreateWindow(IILjava/lang/CharSequence;JJ)J",
+            target = "Lnet/neoforged/fml/loading/ImmediateWindowHandler;setupMinecraftWindow("
+                    + "Ljava/util/function/IntSupplier;Ljava/util/function/IntSupplier;"
+                    + "Ljava/util/function/Supplier;Ljava/util/function/LongSupplier;)J",
             remap = false
         )
     )
     private void rtxremix$requireOpenGl44(CallbackInfo ci) {
-        // Core-profile 4.4: the GL interop imports Remix's images and semaphores
-        // through EXT_memory_object and EXT_semaphore.
+        // NeoForge can hand over its early window or create one here. These hints
+        // cover the creation path; the early-window provider chooses its context.
+        // Remix interop needs core 4.4 for its imported images and semaphores.
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 4);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);

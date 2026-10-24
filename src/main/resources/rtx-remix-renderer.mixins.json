@@ -6,7 +6,8 @@
     "mixins": [
         "ChunkHolderMixin",
         "ServerChunkManagerMixin",
-        "WallBlockMixin"
+        "WallBlockMixin",
+        "UtilWorkerPoolMixin"
     ],
     "client": [
         "BakedQuadMixin",
@@ -63,6 +64,7 @@
         "RebuildTaskMixin",
         "RenderSystemMixin",
         "RenderableChunksMixin",
+        "RenderPhaseTextureAccessor",
         "RenderedChunkMixin",
         "SectionBuilderMixin",
         "SpriteAtlasAccessor",

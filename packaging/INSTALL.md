@@ -1,8 +1,8 @@
 # RTX Remix for Minecraft
 
-This archive installs a Fabric mod that renders Minecraft Java Edition 1.21.1
+This archive installs a NeoForge mod that renders Minecraft Java Edition 1.21.1
 through NVIDIA RTX Remix. It sets up a launcher, Java,
-Fabric, the mod, and the RTX Remix runtime for you.
+NeoForge, the mod, and the RTX Remix runtime for you.
 
 ## What You Need
 
@@ -103,7 +103,7 @@ launch.
 
 `INSTALLER_REFERENCE.md` covers the rest: the modes, every flag, headless and
 CI use, and what the installer verifies before it downloads anything. To add
-the mod to a Fabric instance you already have instead, see
+the mod to a NeoForge instance you already have instead, see
 <https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/blob/main/docs/PLAYING.md#installing-without-the-installer>.
 
 ## First Launch
@@ -151,13 +151,13 @@ Download the new archive from
 <https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest>,
 extract it, and run `install.bat` again. It
 preselects Upgrade and replaces the mod and its supporting files in the
-launcher that already has them. Launcher, Minecraft, Fabric, and other options
+launcher that already has them. Launcher, Minecraft, NeoForge, and other options
 are preserved. To install into the other launcher instead, choose Install.
 
 Install, Upgrade, and Repair remove an old generated `RtxRemix-LabPBR` pack
 identified by its metadata and texture inventory, leaving other packs alone.
 In an existing `options.txt`, they change only `resourcePacks`: vanilla first,
-Fabric next, then user packs in their existing order, without the retired
+NeoForge next, then user packs in their existing order, without the retired
 baseline entry. Missing options files are not created.
 
 The runtime under `remix-sdk\` and the baseline `rtx.conf` belong to the mod
@@ -192,8 +192,6 @@ Everything is under the game folder, which is:
 The automated uninstall removes these:
 
 - `mods\rtx-remix-renderer-*.jar`
-- `mods\fabric-api-*.jar`, all of them in a Prism instance, and only the
-  version the mod pins in the Microsoft launcher's shared `mods\` folder
 - `remix-sdk\`
 - `rtx.conf`
 - `.rtx-remix-version`
@@ -229,7 +227,7 @@ if you are wiping it anyway.
 | The Prism download fails | Check the firewall and retry. The installer asks GitHub for the newest Prism release, and a shared network address can hit GitHub's anonymous rate limit. If GitHub reports a rate limit, wait before retrying |
 | `Download failed after 3 attempts from` followed by an Adoptium URL and the error details | The Adoptium API at `api.adoptium.net` has to be reachable. Check the firewall and re-run |
 | `Failed to extract JDK 21 archive:` followed by the error details | Check free disk space and the permissions on your temporary folder, then re-run the installer to download and extract a fresh archive |
-| The Fabric API download fails | `maven.fabricmc.net` has to be reachable. Check the firewall and re-run |
+| The NeoForge download fails | `maven.neoforged.net` has to be reachable. Check the firewall and re-run |
 | The installer refuses to choose a launcher | Both Prism and the Microsoft launcher are installed and the run was headless. Pass `-Launcher Prism` or `-Launcher Microsoft` |
 
 Problems inside the game rather than inside the installer, such as a black

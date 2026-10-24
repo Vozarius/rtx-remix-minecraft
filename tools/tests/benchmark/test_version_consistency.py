@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import json
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -45,8 +45,7 @@ class VersionConsistencyTests(unittest.TestCase):
     def test_runtime_dependency_versions_match_gradle(self):
         expected = {
             "minecraft": gradle_dependency_version("com.mojang", "minecraft"),
-            "fabric_loader": gradle_dependency_version("net.fabricmc", "fabric-loader"),
-            "fabric_api": gradle_dependency_version("net.fabricmc.fabric-api", "fabric-api"),
+            "neoforge": gradle_dependency_version("net.neoforged", "neoforge"),
         }
         installer = REPO_ROOT / "packaging" / "installer.ps1"
 
@@ -55,8 +54,7 @@ class VersionConsistencyTests(unittest.TestCase):
                 installer,
                 {
                     "minecraft": "script:MC_VERSION",
-                    "fabric_loader": "script:FABRIC_LOADER_VER",
-                    "fabric_api": "script:FABRIC_API_VERSION",
+                    "neoforge": "script:NEOFORGE_VERSION",
                 },
             ),
         ):
@@ -83,26 +81,17 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertNotRegex(benchmark_controller, r'modVersion",\s*"\d+\.\d+\.\d+"')
         self.assertNotRegex(mod_entrypoint, r"Renderer v\d+\.\d+\.\d+")
 
-    def test_fabric_metadata_matches_repository_contract(self):
-        metadata = json.loads(
-            (REPO_ROOT / "src" / "main" / "resources" / "fabric.mod.json").read_text(encoding="utf-8")
+    def test_neoforge_metadata_matches_repository_contract(self):
+        metadata = tomllib.loads(
+            (REPO_ROOT / "src/main/resources/META-INF/neoforge.mods.toml").read_text(encoding="utf-8")
         )
-        minecraft_version = gradle_dependency_version("com.mojang", "minecraft")
-        fabric_loader_version = gradle_dependency_version("net.fabricmc", "fabric-loader")
-        fabric_api_version = gradle_dependency_version("net.fabricmc.fabric-api", "fabric-api")
-
+        minecraft = gradle_dependency_version("com.mojang", "minecraft")
+        neoforge = gradle_dependency_version("net.neoforged", "neoforge")
         self.assertEqual("Apache-2.0", metadata["license"])
-        self.assertEqual(minecraft_version, metadata["depends"]["minecraft"])
-        self.assertEqual(f">={fabric_loader_version}", metadata["depends"]["fabricloader"])
-        self.assertEqual(f">={fabric_api_version}", metadata["depends"]["fabric-api"])
-        self.assertNotIn("fabric-api", metadata.get("suggests", {}))
-
-        icon = metadata.get("icon")
-        if icon:
-            self.assertTrue((REPO_ROOT / "src" / "main" / "resources" / icon).is_file())
-
-        sources = metadata.get("contact", {}).get("sources", "")
-        self.assertNotIn("rtxremix-java", sources)
+        self.assertEqual("rtx_remix_renderer", metadata["mods"][0]["modId"])
+        dependencies = {entry["modId"]: entry for entry in metadata["dependencies"]["rtx_remix_renderer"]}
+        self.assertEqual(f"[{minecraft}]", dependencies["minecraft"]["versionRange"])
+        self.assertEqual(f"[{neoforge},)", dependencies["neoforge"]["versionRange"])
 
     def test_readme_license_matches_repository_license(self):
         license_text = (REPO_ROOT / "LICENSE").read_text(encoding="utf-8")

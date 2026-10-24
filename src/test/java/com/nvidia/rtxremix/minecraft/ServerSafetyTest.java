@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ServerSafetyTest {
 
     /**
-     * Everything reachable from {@link RtxRemixCommonMod#onInitialize()}.
+     * Everything reachable from the common mod constructor.
      *
      * <p>{@code LightEntry$ColorOverride} is on the list because the beacon
      * blocks hold a beam colour; note that referencing a nested type does
@@ -42,6 +42,7 @@ class ServerSafetyTest {
      */
     private static final String[] SERVER_PATH_CLASSES = {
             "com.nvidia.rtxremix.minecraft.RtxRemixCommonMod",
+            "com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamParticles",
             "com.nvidia.rtxremix.minecraft.block.SpotLightBlock",
             "com.nvidia.rtxremix.minecraft.block.CopperBeaconBlock",
             "com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity",

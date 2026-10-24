@@ -4,7 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft;
 
-import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,14 +24,13 @@ import org.slf4j.LoggerFactory;
  * {@code -Dmax.bg.threads} keeps their value. It runs at pre-launch because the
  * pool is created in a static initialiser at class load.
  */
-public final class WorkerPoolCap implements PreLaunchEntrypoint {
+public final class WorkerPoolCap {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(WorkerPoolCap.class);
     static final String PROPERTY = "max.bg.threads";
     static final int MAX_THREADS = 8;
 
-    @Override
-    public void onPreLaunch() {
+    public static void apply() {
         String user = System.getProperty(PROPERTY);
         if (user != null) {
             LOGGER.info("Background worker pool: {}={} set by the launcher, leaving it", PROPERTY, user);

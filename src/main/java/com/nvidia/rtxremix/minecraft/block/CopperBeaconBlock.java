@@ -5,7 +5,12 @@
 package com.nvidia.rtxremix.minecraft.block;
 
 import com.mojang.serialization.MapCodec;
+import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredRegister;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockEntityProvider;
@@ -19,11 +24,17 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.item.ItemPlacementContext;
+import net.minecraft.item.BlockItem;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemGroup;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.state.StateManager;
 import net.minecraft.state.property.DirectionProperty;
 import net.minecraft.state.property.BooleanProperty;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.ActionResult;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.ItemScatterer;
 import net.minecraft.util.BlockMirror;
 import net.minecraft.util.BlockRotation;
@@ -58,7 +69,30 @@ public class CopperBeaconBlock extends SpotLightBlock implements BlockEntityProv
 
     public static final MapCodec<CopperBeaconBlock> CODEC = createCodec(CopperBeaconBlock::new);
 
-    public static final CopperBeaconBlock INSTANCE = new CopperBeaconBlock(beaconSettings());
+    private static final DeferredRegister<Block> BLOCKS =
+            DeferredRegister.create(RegistryKeys.BLOCK, RtxRemixCommonMod.MOD_ID);
+    private static final DeferredRegister<Item> ITEMS =
+            DeferredRegister.create(RegistryKeys.ITEM, RtxRemixCommonMod.MOD_ID);
+    private static final RegistryKey<ItemGroup> FUNCTIONAL_BLOCKS =
+            RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.ofVanilla("functional_blocks"));
+
+    public static final DeferredHolder<Block, CopperBeaconBlock> INSTANCE =
+            BLOCKS.register(ID, () -> new CopperBeaconBlock(beaconSettings()));
+    public static final DeferredHolder<Item, BlockItem> ITEM =
+            ITEMS.register(ID, () -> new BlockItem(INSTANCE.get(), new Item.Settings()));
+
+    /** Attaches content factories; objects are created only during their registry events. */
+    public static void register(IEventBus modBus) {
+        BLOCKS.register(modBus);
+        ITEMS.register(modBus);
+        modBus.addListener(CopperBeaconBlock::populateCreativeTab);
+    }
+
+    private static void populateCreativeTab(BuildCreativeModeTabContentsEvent event) {
+        if (event.getTabKey().equals(FUNCTIONAL_BLOCKS)) {
+            event.add(ITEM.get());
+        }
+    }
 
     public CopperBeaconBlock(AbstractBlock.Settings settings) {
         super(settings, BEAM_COLOR);
@@ -126,7 +160,7 @@ public class CopperBeaconBlock extends SpotLightBlock implements BlockEntityProv
             return ActionResult.SUCCESS;
         }
         if (world.getBlockEntity(pos) instanceof CopperBeaconBlockEntity beacon) {
-            player.openHandledScreen(beacon);
+            player.openMenu(beacon, pos);
             return ActionResult.CONSUME;
         }
         return ActionResult.PASS;

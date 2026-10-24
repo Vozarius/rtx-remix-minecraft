@@ -7,7 +7,6 @@ package com.nvidia.rtxremix.minecraft.mixin;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionSnapshotRelease;
 import net.minecraft.client.render.chunk.ChunkRendererRegion;
 import net.minecraft.client.render.chunk.RenderedChunk;
-import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -31,8 +30,12 @@ public abstract class ChunkRendererRegionMixin implements RegionSnapshotRelease 
 
     private final AtomicBoolean rtxremix$released = new AtomicBoolean();
 
-    @Inject(method = "<init>", at = @At("RETURN"))
-    private void rtxremix$retainSnapshots(World world, int chunkX, int chunkZ, RenderedChunk[] renderedChunks, CallbackInfo ci) {
+    @Inject(
+            method = "<init>(Lnet/minecraft/world/World;II"
+                    + "[Lnet/minecraft/client/render/chunk/RenderedChunk;"
+                    + "Lit/unimi/dsi/fastutil/longs/Long2ObjectFunction;)V",
+            at = @At("RETURN"))
+    private void rtxremix$retainSnapshots(CallbackInfo ci) {
         for (RenderedChunk snapshot : chunks) {
             ((RegionSnapshotRelease) snapshot).rtxremix$retain();
         }

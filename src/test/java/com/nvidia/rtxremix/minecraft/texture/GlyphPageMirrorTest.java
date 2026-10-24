@@ -32,14 +32,14 @@ class GlyphPageMirrorTest {
 
     private static int[] pixel(GlyphPageMirror page, int x, int y) {
         byte[] data = page.data();
-        int index = (y * GlyphPageMirror.PAGE_SIZE + x) * 4;
+        int index = (y * page.width() + x) * 4;
         return new int[] {
                 data[index] & 0xFF, data[index + 1] & 0xFF, data[index + 2] & 0xFF, data[index + 3] & 0xFF };
     }
 
     @Test
     void rgbaGlyphLandsInItsSlotAndSkipsTheSourceRowPadding() {
-        GlyphPageMirror page = new GlyphPageMirror(false);
+        GlyphPageMirror page = new GlyphPageMirror(256, 256, false);
         // A 2x2 glyph cut from a 3-pixel-wide image: the third pixel of each row is
         // outside the glyph and must not be read.
         ByteBuffer src = bytes(
@@ -59,7 +59,7 @@ class GlyphPageMirrorTest {
 
     @Test
     void blitReadsFromTheSourcePosition() {
-        GlyphPageMirror page = new GlyphPageMirror(false);
+        GlyphPageMirror page = new GlyphPageMirror(256, 256, false);
         ByteBuffer src = bytes(99, 99, 99, 99, 1, 2, 3, 4);
         src.position(4);
 
@@ -70,7 +70,7 @@ class GlyphPageMirrorTest {
 
     @Test
     void colourPageFillsMissingChannelsAsGlDoes() {
-        GlyphPageMirror page = new GlyphPageMirror(false);
+        GlyphPageMirror page = new GlyphPageMirror(256, 256, false);
 
         page.blit(0, 0, 1, 1, 3, bytes(10, 20, 30), 3);
         page.blit(1, 0, 1, 1, 1, bytes(40), 1);
@@ -83,7 +83,7 @@ class GlyphPageMirrorTest {
 
     @Test
     void intensityPageSpreadsRedAcrossEveryChannel() {
-        GlyphPageMirror page = new GlyphPageMirror(true);
+        GlyphPageMirror page = new GlyphPageMirror(256, 256, true);
 
         page.blit(0, 0, 1, 1, 1, bytes(200), 1);
         page.blit(1, 0, 1, 1, 4, bytes(70, 1, 2, 3), 4);
@@ -95,8 +95,8 @@ class GlyphPageMirrorTest {
 
     @Test
     void versionsAdvanceWithEveryGlyphAndAcrossPages() {
-        GlyphPageMirror first = new GlyphPageMirror(false);
-        GlyphPageMirror second = new GlyphPageMirror(false);
+        GlyphPageMirror first = new GlyphPageMirror(256, 256, false);
+        GlyphPageMirror second = new GlyphPageMirror(256, 256, false);
         assertEquals(0L, first.version(), "a page with no glyphs has nothing to upload");
 
         first.blit(0, 0, 1, 1, 1, bytes(1), 1);
@@ -111,14 +111,42 @@ class GlyphPageMirrorTest {
     }
 
     @Test
+    void enlargedAtlasAcceptsTheReportedGlyphAndUsesItsAllocatedRowPitch() {
+        GlyphPageMirror page = new GlyphPageMirror(2048, 1024, false);
+        ByteBuffer glyph = ByteBuffer.allocate(8 * 8);
+        for (int i = 0; i < glyph.capacity(); i++) glyph.put(i, (byte) (i + 1));
+
+        page.blit(249, 0, 8, 8, 1, glyph, 8);
+        page.blit(2040, 1016, 8, 8, 1, glyph, 8);
+
+        assertEquals(2048, page.width());
+        assertEquals(1024, page.height());
+        assertEquals(2048 * 1024 * 4, page.data().length);
+        assertArrayEquals(new int[] {8, 0, 0, 255}, pixel(page, 256, 0));
+        assertArrayEquals(new int[] {9, 0, 0, 255}, pixel(page, 249, 1));
+        assertArrayEquals(new int[] {64, 0, 0, 255}, pixel(page, 2047, 1023));
+        assertArrayEquals(new int[] {0, 0, 0, 0}, pixel(page, 248, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> page.blit(2041, 1016, 8, 8, 1, glyph, 8));
+        assertThrows(IllegalArgumentException.class,
+                () -> page.blit(2040, 1017, 8, 8, 1, glyph, 8));
+    }
+
+    @Test
+    void dimensionsMustBePositive() {
+        assertThrows(IllegalArgumentException.class, () -> new GlyphPageMirror(0, 256, false));
+        assertThrows(IllegalArgumentException.class, () -> new GlyphPageMirror(256, -1, false));
+    }
+
+    @Test
     void aGlyphOutsideThePageIsRejected() {
-        GlyphPageMirror page = new GlyphPageMirror(false);
+        GlyphPageMirror page = new GlyphPageMirror(256, 256, false);
         ByteBuffer twoPixels = bytes(0, 0, 0, 0, 0, 0, 0, 0);
 
         assertThrows(IllegalArgumentException.class,
-                () -> page.blit(GlyphPageMirror.PAGE_SIZE - 1, 0, 2, 1, 4, twoPixels, 8));
+                () -> page.blit(page.width() - 1, 0, 2, 1, 4, twoPixels, 8));
         assertThrows(IllegalArgumentException.class,
-                () -> page.blit(0, GlyphPageMirror.PAGE_SIZE, 1, 1, 4, twoPixels, 4));
+                () -> page.blit(0, page.height(), 1, 1, 4, twoPixels, 4));
         assertThrows(IllegalArgumentException.class,
                 () -> page.blit(-1, 0, 1, 1, 4, twoPixels, 4));
         assertEquals(0L, page.version(), "a rejected upload changes nothing");

@@ -44,6 +44,19 @@ class CommandLineRedactionTest {
     }
 
     @Test
+    void clearsStaleArgumentsAfterAShortenedNativeCommandLine() {
+        String prefix = "net.caffeinemc.sodium / net.minecraft.client.main.Main /";
+        String tail = " leftover --accessToken secret --uuid deadbeef";
+        assertRedacts(prefix + '\0' + tail, prefix + "\0".repeat(tail.length() + 1), 0);
+    }
+
+    @Test
+    void redactsTheLivePrefixAndClearsTheUnusedTail() {
+        String prefix = "java --accessToken=secret";
+        assertRedacts(prefix + "\0 old --uuid stale", "java --accessToken=******" + "\0".repeat(18), 1);
+    }
+
+    @Test
     void leavesEverythingElseAlone() {
         assertRedacts("java -Dx=--accessToken --accessTokens secret --username Steve --accessToken",
                 "java -Dx=--accessToken --accessTokens secret --username Steve --accessToken", 0);

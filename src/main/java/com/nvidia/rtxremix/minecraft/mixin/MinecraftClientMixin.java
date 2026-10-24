@@ -32,6 +32,16 @@ public abstract class MinecraftClientMixin {
     private static final ThreadLocal<ProfileScope> rtxremix$blitScope = new ThreadLocal<>();
     private static final ThreadLocal<Long> rtxremix$renderStartNanos = new ThreadLocal<>();
 
+    @Inject(method = "run", at = @At("HEAD"))
+    private void rtxremix$start(CallbackInfo ci) {
+        RtxRemixMod.onClientStarted();
+    }
+
+    @Inject(method = "stop", at = @At("HEAD"))
+    private void rtxremix$stop(CallbackInfo ci) {
+        RtxRemixMod.shutdownForClientStop();
+    }
+
     @Inject(method = "render", at = @At("HEAD"))
     private void rtxremix$renderHead(boolean tick, CallbackInfo ci) {
         ProfileScope.beginFrame();

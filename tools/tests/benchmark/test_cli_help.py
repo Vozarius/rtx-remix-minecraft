@@ -28,7 +28,7 @@ class CliHelpTests(unittest.TestCase):
         text = self.help_for("install")
 
         self.assertIn("gradlew.bat build", text)
-        self.assertIn("Fabric Loader and Fabric API", text)
+        self.assertIn("NeoForge 21.1.242 or newer", text)
         self.assertIn("gameplay conf payload, and runtime textures", text)
         self.assertIn("Baseline PBR textures are built into the JAR", text)
         self.assertIn("packaging/migrate_resource_packs.ps1", text)
