@@ -42,18 +42,17 @@ class ServerSafetyTest {
      */
     private static final String[] SERVER_PATH_CLASSES = {
             "com.nvidia.rtxremix.minecraft.RtxRemixCommonMod",
-            "com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamParticles",
-            "com.nvidia.rtxremix.minecraft.block.SpotLightBlock",
-            "com.nvidia.rtxremix.minecraft.block.CopperBeaconBlock",
-            "com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity",
-            "com.nvidia.rtxremix.minecraft.block.CopperBeaconAnimationMode",
-            "com.nvidia.rtxremix.minecraft.block.CopperBeaconAxisState",
+            "com.nvidia.rtxremix.content.SpotLightBlock",
+            "com.nvidia.rtxremix.content.CopperBeaconBlock",
+            "com.nvidia.rtxremix.content.CopperBeaconBlockEntity",
+            "com.nvidia.rtxremix.content.CopperBeaconAnimationMode",
+            "com.nvidia.rtxremix.content.CopperBeaconAxisState",
             "com.nvidia.rtxremix.minecraft.block.CopperBeaconPose",
-            "com.nvidia.rtxremix.minecraft.block.CopperBeaconScreenData",
-            "com.nvidia.rtxremix.minecraft.block.CopperBeaconScreenHandler",
-            "com.nvidia.rtxremix.minecraft.block.CopperBeaconUpdatePayload",
-            "com.nvidia.rtxremix.minecraft.block.CopperBeaconShapes",
-            "com.nvidia.rtxremix.minecraft.block.CopperBeaconState",
+            "com.nvidia.rtxremix.content.CopperBeaconScreenData",
+            "com.nvidia.rtxremix.content.CopperBeaconScreenHandler",
+            "com.nvidia.rtxremix.content.CopperBeaconUpdatePayload",
+            "com.nvidia.rtxremix.content.CopperBeaconShapes",
+            "com.nvidia.rtxremix.content.CopperBeaconState",
             "com.nvidia.rtxremix.minecraft.light.OverridesItemLight",
             "com.nvidia.rtxremix.minecraft.light.LightEntry$ColorOverride",
             "com.nvidia.rtxremix.minecraft.light.LightEntry",
@@ -86,8 +85,8 @@ class ServerSafetyTest {
     /** Sanity check: the scan finds a reference that is genuinely present. */
     @Test
     void referencesTextDetectsAKnownReference() {
-        assertTrue(referencesText("com.nvidia.rtxremix.minecraft.block.CopperBeaconBlock",
-                        "minecraft/block/SpotLightBlock"),
+        assertTrue(referencesText("com.nvidia.rtxremix.content.CopperBeaconBlock",
+                        "content/SpotLightBlock"),
                 "CopperBeaconBlock extends SpotLightBlock, so the scan should see it; "
                         + "if this fails the other assertions in this class are vacuous.");
     }

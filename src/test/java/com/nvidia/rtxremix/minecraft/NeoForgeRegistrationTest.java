@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft;
 
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlock;
+import com.nvidia.rtxremix.content.CopperBeaconBlock;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
@@ -36,7 +36,7 @@ class NeoForgeRegistrationTest {
     @Test
     void commonConstructorDoesNotCreateRegistryObjectsOrResolveHolders() throws IOException {
         Scan scan = new Scan();
-        scan.visit(MOD_PACKAGE + "RtxRemixCommonMod", "<init>", "(Lnet/neoforged/bus/api/IEventBus;)V");
+        scan.visit("com/nvidia/rtxremix/content/RtxRemixContentMod", "<init>", "(Lnet/neoforged/bus/api/IEventBus;)V");
         assertEquals(Set.of(), scan.violations);
     }
 
@@ -84,7 +84,7 @@ class NeoForgeRegistrationTest {
         }
 
         private void initialize(String owner) throws IOException {
-            if (!owner.startsWith(MOD_PACKAGE) || !initialized.add(owner)) return;
+            if (!(owner.startsWith(MOD_PACKAGE) || owner.startsWith("com/nvidia/rtxremix/content/")) || !initialized.add(owner)) return;
             String parent = read(owner).superName;
             if (parent != null) initialize(parent);
             visit(owner, "<clinit>", "()V");
@@ -99,7 +99,7 @@ class NeoForgeRegistrationTest {
         }
 
         private void visit(String owner, String name, String descriptor) throws IOException {
-            if (!owner.startsWith(MOD_PACKAGE) || !visited.add(owner + "." + name + descriptor)) return;
+            if (!(owner.startsWith(MOD_PACKAGE) || owner.startsWith("com/nvidia/rtxremix/content/")) || !visited.add(owner + "." + name + descriptor)) return;
             initialize(owner);
             for (var method : read(owner).methods) {
                 if (!method.name.equals(name) || !method.desc.equals(descriptor)) continue;

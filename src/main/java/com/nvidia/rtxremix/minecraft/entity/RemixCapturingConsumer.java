@@ -1006,18 +1006,41 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * rigid part, so it ends the open run and is dropped.
      */
     private void closeQuadIfReady(int lastVertexIndex) {
-        if (!recordParts || (lastVertexIndex & 3) != 3) return;
+        if (!recordParts || (lastVertexIndex & 3) != 3)
+            return;
 
         int start = lastVertexIndex - 3;
         int bone = boneIndices[start];
-        if (boneIndices[start + 1] != bone
-                || boneIndices[start + 2] != bone
+        if (boneIndices[start + 1] != bone || boneIndices[start + 2] != bone
                 || boneIndices[start + 3] != bone) {
             closeOpenPart();
             return;
         }
 
-        if (partOpen && partVertexCount[parts] < MAX_PART_VERTICES && partBone[parts] == bone
+        int materialLayer = EntityRenderContext.get().getBlockItemLayer();
+        if (materialLayer == EntityRenderContext.NO_BLOCK_ITEM
+                && BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)) {
+            BlockTextureManager textures = BlockTextureManager.get();
+            if (textures != null && textures.isInitialized()) {
+                var sprite =
+                        textures.spriteAt((tu[start] + tu[start + 1] + tu[start + 2] + tu[start + 3]) * 0.25f,
+                                (tv[start] + tv[start + 1] + tv[start + 2] + tv[start + 3]) * 0.25f);
+                if (sprite != null) {
+                    if (sprite.hasTransparency)
+                        materialLayer = BlockTextureManager.L_TRANS;
+                    if (com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.get().isGlassSprite(
+                                sprite.id))
+                        materialLayer = BlockTextureManager.L_GLASS;
+                    int fluidLayer = textures.fluidLayer(sprite);
+                    if (fluidLayer >= BlockTextureManager.LAYER_COUNT) {
+                        materialLayer = fluidLayer;
+                        tileFluidQuad(start);
+                    }
+                }
+            }
+        }
+        if (partOpen && partBlockItemLayer[parts] == materialLayer
+                && partVertexCount[parts] < MAX_PART_VERTICES && partBone[parts] == bone
                 && partStart[parts] + partVertexCount[parts] == start) {
             partVertexCount[parts] += 4;
         } else {
@@ -1028,12 +1051,34 @@ public class RemixCapturingConsumer implements VertexConsumer {
             partBone[parts] = bone;
             partSides[parts] = null;
             partSprite[parts] = null;
-            partBlockItemLayer[parts] = EntityRenderContext.get().getBlockItemLayer();
+            partBlockItemLayer[parts] = materialLayer;
             partCardFace[parts] = NO_VERTICES;
-            lane0 = FNV_OFFSET; lane1 = FNV_OFFSET; lane2 = FNV_OFFSET; lane3 = FNV_OFFSET;
+            lane0 = FNV_OFFSET;
+            lane1 = FNV_OFFSET;
+            lane2 = FNV_OFFSET;
+            lane3 = FNV_OFFSET;
             partOpen = true;
         }
         foldQuad(start);
+    }
+
+    private void tileFluidQuad(int start) {
+        float ax = Math.abs(nx[start]), ay = Math.abs(ny[start]), az = Math.abs(nz[start]);
+        float tile = BlockTextureManager.getWaterTileSize();
+        for (int i = start; i < start + 4; i++) {
+            if (ay >= ax && ay >= az) {
+                tu[i] = px[i] / tile;
+                tv[i] = pz[i] / tile;
+            } else if (ax >= az) {
+                tu[i] = pz[i] / tile;
+                tv[i] = py[i] / tile;
+            } else {
+                tu[i] = px[i] / tile;
+                tv[i] = py[i] / tile;
+            }
+            texcoordBoundsMin[i] = HardcodedVertex.packHalf2x16(0, 0);
+            texcoordBoundsMax[i] = HardcodedVertex.packHalf2x16(1, 1);
+        }
     }
 
     /**

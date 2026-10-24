@@ -4,11 +4,11 @@
  */
 package com.nvidia.rtxremix.minecraft.screen;
 
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconAnimationMode;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconAxisState;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconScreenHandler;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconUpdatePayload;
+import com.nvidia.rtxremix.content.CopperBeaconAnimationMode;
+import com.nvidia.rtxremix.content.CopperBeaconAxisState;
+import com.nvidia.rtxremix.content.CopperBeaconBlockEntity;
+import com.nvidia.rtxremix.content.CopperBeaconScreenHandler;
+import com.nvidia.rtxremix.content.CopperBeaconUpdatePayload;
 import java.util.EnumMap;
 import java.util.Locale;
 import java.util.Map;

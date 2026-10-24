@@ -52,7 +52,7 @@ public final class SodiumSectionCapture {
         if (!active) return;
         var emitter = BlockQuadEmitter.threadLocal();
         emitter.flushRenderedBlock();
-        clearGlass = state.isOf(net.minecraft.block.Blocks.GLASS) || state.isOf(net.minecraft.block.Blocks.GLASS_PANE);
+        clearGlass = com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.glass(state);
         blockPos.set(x, y, z);
         emitter.processBlock(state, world, blockPos, state.isOpaqueFullCube(world, blockPos));
     }

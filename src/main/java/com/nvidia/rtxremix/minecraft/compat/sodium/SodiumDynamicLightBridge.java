@@ -40,6 +40,9 @@ public final class SodiumDynamicLightBridge {
             // The ordinary light manager already owns entities' held/fire lights and placed block entities.
             if (source instanceof Entity || source instanceof BlockEntity || source.sdl$getDynamicLightLevel() != world) continue;
             if (source instanceof CapturedTerrainLightSource captured && captured.rtxremix$hasCapturedTerrainLight()) continue;
+            String sourceClass = source.getClass().getName();
+            if (sourceClass.equals("top.leonx.dynlight.sodium.CreateDynLightSource")
+                    || sourceClass.equals("top.leonx.dynlight.lamb.CreateDynLightSourceForge")) continue;
             SourceLight light = BY_SOURCE.get(source);
             int luminance = source.sdl$getLuminance();
             if (light == null && luminance > 0) {

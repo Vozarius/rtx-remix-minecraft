@@ -151,3 +151,48 @@ sources through Sodium Dynamic Lights' `DynamicLightSource` API.
 | `vista-1.21.1-5.5.6-neoforge.jar` | Shared Minecraft capture or normal gameplay/UI path; visual check pending |
 | `xaerominimap-neoforge-1.21.1-26.5.0.jar` | Shared Minecraft capture or normal gameplay/UI path; visual check pending |
 | `xaeroworldmap-neoforge-1.21.1-1.46.0.jar` | Shared Minecraft capture or normal gameplay/UI path; visual check pending |
+
+
+## Materials and client-only installation
+
+The packaged renderer registers no synchronized blocks, items, menus, payloads, or particle
+identifiers. Its only mod entrypoint is restricted to `Dist.CLIENT`; its mixin plugin also
+skips dedicated servers. Local foam particles use vanilla atlas sprites without registry entries.
+The optional `rtx-remix-content-neoforge` artifact owns Copper Beacon registration, persisted
+state, menu payloads and physical wall connections. Install that small artifact on both ends
+when using Copper Beacon; it has no dependency on renderer classes or the native runtime.
+Existing block identifiers and NBT remain unchanged. Keep the content artifact when opening
+existing saves containing that block.
+
+One material catalog scans registered block states and their actual baked model sprites at
+texture reload. The catalog classifies glass and light-emitting models together and indexes
+registered FluidType sprite pairs. Unauthored luminous states receive six outward-facing area
+lights, while explicit light rules retain priority. Surface emission is authored separately:
+resource packs can supply `<sprite>_e.png`, with RGB brightness times alpha as an albedo emission
+mask. Existing LabPBR emission remains the default when no `_e` sidecar is provided. Animated
+masks follow sprite animation uploads.
+
+Non-glass translucent atlas surfaces use alpha-blended opaque materials, preserving their
+paint and alpha without glass refraction. Glass models use a transmitting material with their
+original sprite as a diffuse layer. Streamed Create quads are split when the material changes,
+so a glass window and its opaque housing can share a contraption render buffer.
+
+Fluid variants share the water normal flipbook. Each variant uses the alpha-weighted mean RGB
+and mean coverage of every pixel/frame of its source texture; renderer vertex tint and alpha
+remain multiplicative. Fluid sprites in streamed entities and tanks select the same materials
+and tiled UVs as terrain. Texture averages cannot reconstruct viscosity, foam, or physically
+measured optical properties. Empty placeholder resources cannot supply a measurable colour.
+
+Create contraptions have native world-space light owners independent of Sodium Dynamic Lights.
+They cache luminous block positions and transform rule/automatic emitters with the entity's
+interpolated local transform and any parent Sable frame. Copper Beacon disk axes, position,
+shaping and radiance use its articulated pose. These lights and terrain, including sublevels,
+share the Remix scene, so light and shadows cross owner boundaries. Provider-generated Create
+point lights are excluded to avoid duplicate sources.
+
+The active registry/pack catalog and original PNGs are exported to
+`<game>/rtx-remix/reference/materials`. `rtxremix.materialReferenceDirectory` overrides the path.
+`packaging/export_reference_materials.py --minecraft <1.21.1-client.jar>` creates the offline
+reference authoring superset, fluid colour previews and JSON manifests under `reference/materials`;
+its name-based candidates do not certify runtime block emission. See that folder's README for
+mask authoring. Packaging and headless tests do not constitute an in-game pack compatibility test.

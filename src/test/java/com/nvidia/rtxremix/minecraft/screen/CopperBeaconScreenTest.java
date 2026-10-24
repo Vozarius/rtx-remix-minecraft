@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.screen;
 
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconAxisState;
+import com.nvidia.rtxremix.content.CopperBeaconAxisState;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

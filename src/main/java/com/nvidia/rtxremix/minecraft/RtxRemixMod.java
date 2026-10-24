@@ -24,7 +24,7 @@ import com.nvidia.rtxremix.minecraft.settings.RtxSettings;
 import com.nvidia.rtxremix.minecraft.screen.CopperBeaconScreen;
 import com.nvidia.rtxremix.minecraft.profiling.TracyGCListener;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
-import com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamParticles;
+
 import com.nvidia.rtxremix.minecraft.logic.ZoneRegistry;
 import com.nvidia.rtxremix.minecraft.logic.ZonePersistentState;
 import com.nvidia.rtxremix.minecraft.logic.ZoneDefinition;
@@ -41,8 +41,8 @@ import com.nvidia.rtxremix.minecraft.gl.TextureOverlay;
 import com.nvidia.rtxremix.minecraft.entity.CopperBeaconBlockEntityRenderer;
 import com.nvidia.rtxremix.minecraft.camera.CameraController;
 import com.nvidia.rtxremix.minecraft.camera.StillShot;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconScreenHandler;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
+import com.nvidia.rtxremix.content.CopperBeaconScreenHandler;
+import com.nvidia.rtxremix.content.CopperBeaconBlockEntity;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
@@ -320,6 +320,7 @@ public class RtxRemixMod {
 
     public RtxRemixMod(IEventBus modBus) {
         instance = this;
+        if (com.nvidia.rtxremix.minecraft.compat.ContentSupport.present()) {
         modBus.addListener((EntityRenderersEvent.RegisterLayerDefinitions event) -> {
             event.registerLayerDefinition(CopperBeaconBlockEntityRenderer.BODY_MODEL_LAYER,
                     CopperBeaconBlockEntityRenderer::getBodyTexturedModelData);
@@ -331,15 +332,8 @@ public class RtxRemixMod {
                         CopperBeaconBlockEntityRenderer::new));
         modBus.addListener((RegisterMenuScreensEvent event) ->
                 event.register(CopperBeaconScreenHandler.TYPE.get(), CopperBeaconScreen::new));
+        }
         modBus.addListener(RemixWeatherRenderer::registerShaders);
-        modBus.addListener((net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent event) -> {
-            event.registerSpriteSet(RapidFoamParticles.RAPID_FOAM.get(),
-                    com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamParticle.Factory::new);
-            event.registerSpriteSet(RapidFoamParticles.RAPID_FOAM_DOT.get(),
-                    com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamDotParticle.Factory::new);
-            event.registerSpriteSet(RapidFoamParticles.RAPID_MIST.get(),
-                    com.nvidia.rtxremix.minecraft.particle.rapids.RapidMistParticle.Factory::new);
-        });
         LOGGER.info("========================================");
         LOGGER.info("RTX Remix Renderer v{} initializing...", getModVersion());
         LOGGER.info("========================================");

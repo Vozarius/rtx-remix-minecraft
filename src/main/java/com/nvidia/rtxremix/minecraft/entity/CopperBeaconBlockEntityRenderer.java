@@ -4,8 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlock;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
+import com.nvidia.rtxremix.content.CopperBeaconBlock;
+import com.nvidia.rtxremix.content.CopperBeaconBlockEntity;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconPose;
 import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import net.minecraft.block.BlockState;
@@ -123,7 +123,7 @@ public final class CopperBeaconBlockEntityRenderer
         Direction up = state.get(CopperBeaconBlock.MOUNT);
         Direction forward = state.get(Properties.FACING);
         double animationTick = CopperBeaconAnimationClock.sample(
-                beacon.getWorld(), tickDelta);
+                net.minecraft.client.MinecraftClient.getInstance().world, tickDelta);
 
         matrices.push();
         matrices.translate(0.5, 0.5, 0.5);

@@ -16,7 +16,7 @@ import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.mixin.SpriteAtlasAccessor;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
+import com.nvidia.rtxremix.content.CopperBeaconBlockEntity;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
@@ -900,8 +900,11 @@ public class RemixEntitySubmitter {
                 canvasPatternCount = 0;
             }
             if (canvasReader.isBacking(role, sides, bone)) continue;
-            submitRigidPart(result, consumer, part, texId,
-                    atlasSurfaceMode(texId, surfaceMode, consumer.getPartBlockItemLayer(part)),
+            int partLayer=consumer.getPartBlockItemLayer(part);
+            boolean fluidPart=BlockTextureManager.BLOCK_ATLAS_ID.equals(texId) && partLayer>=BlockTextureManager.LAYER_COUNT;
+            Identifier partTexture=fluidPart ? BlockTextureManager.get().fluidEntityTexture(partLayer) : texId;
+            submitRigidPart(result, consumer, part, partTexture,
+                    fluidPart ? RenderLayerUtils.SurfaceMode.TRANSLUCENT : atlasSurfaceMode(texId, surfaceMode, partLayer),
                     layer.topology(), layer.transientGeometry(), layerIndex,
                     shellLayerFor(layerIndex, canvasReader.depth(), role), role,
                     worldTransform, baseCategoryFlags | textureCategoryFlags
@@ -1242,7 +1245,7 @@ public class RemixEntitySubmitter {
     }
 
     private static CopperBeaconBlockEntity placedBeaconLens(Object owner, Sprite sprite) {
-        return owner instanceof CopperBeaconBlockEntity beacon
+        return com.nvidia.rtxremix.minecraft.compat.ContentSupport.present() && owner instanceof CopperBeaconBlockEntity beacon
                         && sprite != null
                         && (CopperBeaconBlockEntityRenderer.LENS_SPRITE_ID.equals(
                                         sprite.getContents().getId())
@@ -1541,7 +1544,7 @@ public class RemixEntitySubmitter {
                                      boolean cuboid,
                                      int tintColor,
                                      PatternCanvasRole role) {
-        if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)) {
+        if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId) || isFluidEntityTexture(textureId)) {
             return surfaceMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT
                     || surfaceMode == RenderLayerUtils.SurfaceMode.GLASS
                     ? BlockTextureManager.ATLAS_TRANSLUCENT_BLEND
@@ -2090,12 +2093,22 @@ public class RemixEntitySubmitter {
         missingMaterialSince.remove(materialKey);
     }
 
+    private static boolean isFluidEntityTexture(Identifier texture) {
+        return texture != null && texture.getNamespace().equals("rtx-remix-renderer") && texture.getPath().startsWith("fluid/");
+    }
+
     private void ensureMaterial(EntityMaterialKey materialKey) {
         if (materialKey == null || materialKey.textureId() == null) return;
         RemixMaterial cached = materialCache.get(materialKey);
         if (cached != null && !cached.isDeleted()) return;
         if (cached != null) materialCache.remove(materialKey);
         Identifier textureId = materialKey.textureId();
+
+        if (isFluidEntityTexture(textureId)) {
+            BlockTextureManager textures=BlockTextureManager.get();
+            if(textures!=null) cacheMaterial(materialKey,textures.entityFluidMaterial(textureId));
+            return;
+        }
 
         // Item entities borrow the block atlas and its already-built LabPBR materials.
         if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)) {

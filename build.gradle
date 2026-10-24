@@ -208,6 +208,15 @@ dependencies {
             .matching { include 'META-INF/jarjar/*.jar' }.files)
     modCompileOnly files(zipTree('reference/create-1.21.1-6.0.11.jar')
             .matching { include 'META-INF/jarjar/flywheel-*.jar' }.singleFile)
+    def createApi = layout.buildDirectory.file('reference-api/create-contraptions-v2.jar').get().asFile
+    if (!createApi.exists() || createApi.lastModified() < file('reference/create-1.21.1-6.0.11.jar').lastModified()) {
+        createApi.parentFile.mkdirs()
+        ant.zip(destfile: createApi) {
+            zipfileset(src: file('reference/create-1.21.1-6.0.11.jar'), includes: 'com/simibubi/create/content/contraptions/**,com/simibubi/create/foundation/virtualWorld/**')
+        }
+    }
+    modCompileOnly files(createApi)
+    modCompileOnly files(zipTree('reference/create-1.21.1-6.0.11.jar').matching { include 'META-INF/jarjar/Ponder-*.jar', 'META-INF/jarjar/ponder-*.jar', 'META-INF/jarjar/Registrate-*.jar' }.files)
     modCompileOnly files('reference/sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar')
     modCompileOnly files('reference/framegen-1.4-neoforge-1.21.1.jar')
     modCompileOnly files('reference/sable-neoforge-1.21.1-2.0.5.jar')
@@ -223,9 +232,14 @@ sourceSets.test.runtimeClasspath += sourceSets.main.compileClasspath
 
 test {
     useJUnitPlatform()
-    dependsOn tasks.named('remapJar')
+    dependsOn tasks.named('remapJar'), 'clientJar', 'contentJar'
     inputs.file(tasks.named('remapJar').flatMap { it.archiveFile })
     doFirst {
+        systemProperty 'rtxremix.clientJar', tasks.named('clientJar').get().archiveFile.get().asFile.absolutePath
+        systemProperty 'rtxremix.contentJar', tasks.named('contentJar').get().archiveFile.get().asFile.absolutePath
+        def namedTestClasspath = layout.buildDirectory.file('named-test-classpath.txt').get().asFile
+        namedTestClasspath.text = sourceSets.test.runtimeClasspath.asPath
+        systemProperty 'rtxremix.namedTestClasspathFile', namedTestClasspath.absolutePath
         def productionMinecraft = loom.getMinecraftJars(net.fabricmc.loom.api.mappings.layered.MappingsNamespace.MOJANG)
         systemProperty 'rtxremix.referenceVerifierClasspath', files(sourceSets.test.output,
                 tasks.named('remapJar').get().archiveFile.get().asFile, productionMinecraft,
@@ -499,10 +513,38 @@ def remapJarTask = tasks.named('remapJar')
 remapJarTask.configure {
     atAccessWideners.add('rtx-remix-renderer.accesswidener')
 }
+def contentClasses = 'com/nvidia/rtxremix/content/**'
+def clientJarTask = tasks.register('clientJar', Zip) {
+    dependsOn remapJarTask
+    archiveBaseName.set(projectArchiveName)
+    archiveVersion.set(resolvedBuildVersion)
+    archiveClassifier.set('client')
+    archiveExtension.set('jar')
+    destinationDirectory.set(layout.buildDirectory.dir('libs'))
+    from({ zipTree(remapJarTask.get().archiveFile.get().asFile) }) { exclude contentClasses }
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+def contentJarTask = tasks.register('contentJar', Zip) {
+    dependsOn remapJarTask
+    archiveBaseName.set('rtx-remix-content-neoforge')
+    archiveVersion.set(resolvedBuildVersion)
+    archiveExtension.set('jar')
+    destinationDirectory.set(layout.buildDirectory.dir('distributions'))
+    from({ zipTree(remapJarTask.get().archiveFile.get().asFile) }) {
+        include contentClasses, 'assets/rtx-remix-renderer/**', 'data/rtx-remix-renderer/**', 'LICENSE*', 'NOTICE*'
+    }
+    from('src/content/resources') {
+        filesMatching('META-INF/neoforge.mods.toml') { expand(version: resolvedBuildVersion) }
+    }
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+tasks.named('assemble').configure { dependsOn clientJarTask, contentJarTask }
 def packageJarTask = tasks.register('packageJar', Zip) {
     description = 'Assembles the remapped distributable JAR with the selected platform SDKs bundled'
     group = 'build'
-    dependsOn remapJarTask
+    dependsOn clientJarTask, contentJarTask
     dependsOn buildArches.collect { fetchRuntimeSdkTasks[it] }
     if (buildArches.contains('win64')) dependsOn 'compileNativeWin64'
     if (buildArches.contains('arm64')) dependsOn 'compileNativeArm64'
@@ -515,7 +557,7 @@ def packageJarTask = tasks.register('packageJar', Zip) {
     preserveFileTimestamps = false
     reproducibleFileOrder = true
 
-    from({ zipTree(remapJarTask.get().archiveFile.get().asFile) })
+    from({ zipTree(clientJarTask.get().archiveFile.get().asFile) })
 
     doFirst {
         checkPackageSourceHomogeneity()

@@ -1,0 +1,23 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="Apache-2.0"
+[[mods]]
+modId="rtx_remix_content"
+version="${version}"
+displayName="RTX Remix Copper Beacon Content"
+authors="NVIDIA"
+description="Optional Copper Beacon blocks. Install on both client and server; the renderer is optional on the client."
+[[mixins]]
+config="rtx-remix-content.mixins.json"
+[[dependencies.rtx_remix_content]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.242,)"
+ordering="NONE"
+side="BOTH"
+[[dependencies.rtx_remix_content]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="BOTH"

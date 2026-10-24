@@ -385,6 +385,7 @@ public final class BlockMeshBuilder {
         boolean isSss = bucketKey.endsWith("_sss");
         String baseName = isSss ? bucketKey.substring(0, bucketKey.length() - 4) : bucketKey;
 
+        if (baseName.startsWith("fluid:")) return tex.fluidMaterial(baseName);
         if ("water".equals(baseName)) return tex.getWaterSurfaceMaterial();
 
         int layerType = BlockTextureManager.layerType(baseName);

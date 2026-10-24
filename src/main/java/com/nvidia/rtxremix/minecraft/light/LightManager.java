@@ -15,10 +15,10 @@ import com.nvidia.rtxremix.RemixException;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
 import com.nvidia.rtxremix.minecraft.asset.RemixLightStore;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlock;
-import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
+import com.nvidia.rtxremix.content.CopperBeaconBlock;
+import com.nvidia.rtxremix.content.CopperBeaconBlockEntity;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconPose;
-import com.nvidia.rtxremix.minecraft.block.SpotLightBlock;
+import com.nvidia.rtxremix.content.SpotLightBlock;
 import com.nvidia.rtxremix.minecraft.entity.CopperBeaconAnimationClock;
 import com.nvidia.rtxremix.minecraft.entity.RemixFirstPersonPass;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
@@ -115,6 +115,7 @@ public class LightManager {
     private final Set<EntityLightKey> seenEntityKeys = new HashSet<>();
     private final Map<CopperBeaconBlockEntity, RemixLight> placedBeaconLights =
             new IdentityHashMap<>();
+    private final Map<CopperBeaconBlockEntity, LightInfo> placedBeaconDefinitions = new IdentityHashMap<>();
     private final Set<CopperBeaconBlockEntity> seenPlacedBeacons =
             Collections.newSetFromMap(new IdentityHashMap<>());
     /** Entities that claimed a light this frame; see {@link #ownsLightThisFrame}. */
@@ -232,8 +233,9 @@ public class LightManager {
             }
         }
 
+        com.nvidia.rtxremix.minecraft.compat.MovingBlockLighting.update(world, tickDelta, this);
         double beaconAnimationTick = CopperBeaconAnimationClock.sample(world, tickDelta);
-        for (CopperBeaconBlockEntity beacon : CopperBeaconBlockEntity.loaded()) {
+        if (com.nvidia.rtxremix.minecraft.compat.ContentSupport.present()) for (CopperBeaconBlockEntity beacon : CopperBeaconBlockEntity.loaded()) {
             if (!beacon.isRemoved() && beacon.getWorld() == world) {
                 ensurePlacedBeaconLight(beacon, beaconAnimationTick);
             }
@@ -266,6 +268,7 @@ public class LightManager {
                 if (light != null && !light.isDeleted()) {
                     light.destroy();
                 }
+                placedBeaconDefinitions.remove(entry.getKey());
                 beaconIterator.remove();
             }
         }
@@ -276,27 +279,59 @@ public class LightManager {
      * The entity pass keeps such entities in the scene at any distance: their light already
      * reaches it from wherever they stand.
      */
+    public void markMovingLightOwner(int entityId) { lightOwnerIds.add(entityId); }
+
     public boolean ownsLightThisFrame(int entityId) {
         return lightOwnerIds.contains(entityId);
     }
 
-    private void ensurePlacedBeaconLight(
-            CopperBeaconBlockEntity beacon, double animationTick) {
-        if (!beacon.isActive() || beacon.getIntensityMultiplier() <= 0.0f) {
+    private final com.nvidia.rtxremix.Transform placedBeaconFrame = new com.nvidia.rtxremix.Transform();
+    private void ensurePlacedBeaconLight(CopperBeaconBlockEntity beacon, double animationTick) {
+        if (!beacon.isActive() || beacon.getIntensityMultiplier() <= 0)
             return;
+        LightInfo info = placedBeaconDefinitions.get(beacon);
+        if (info == null) {
+            info = newBeaconLightInfo();
+            placedBeaconDefinitions.put(beacon, info);
+        }
+        if (!updateBeaconLightInfo(beacon, animationTick, info))
+            return;
+        BlockPos pos = beacon.getPos();
+        var frame = com.nvidia.rtxremix.minecraft.compat.SpatialFrames.find(
+                (ClientWorld) beacon.getWorld(), pos.getX() >> 4, pos.getZ() >> 4);
+        if (frame != null) {
+            if (!frame.rtxremix$isAlive())
+                return;
+            Vector3f emitter = scratchPlacedBeaconPose.emitter();
+            frame.rtxremix$transform((double) pos.getX() + emitter.x(), (double) pos.getY() + emitter.y(),
+                    (double) pos.getZ() + emitter.z(), placedBeaconFrame);
+            com.nvidia.rtxremix.minecraft.compat.FrameLightTransform.apply(info, info, placedBeaconFrame);
+        }
+        putPlacedBeaconLight(beacon, info);
+        seenPlacedBeacons.add(beacon);
+    }
+
+    public static LightInfo newBeaconLightInfo() {
+        LightInfo info = new LightInfo();
+        info.diskExt = new LightInfoDiskEXT();
+        return info;
+    }
+
+    /** Mutates a reusable local definition shared by placed and moving owners. */
+    public boolean updateBeaconLightInfo(
+            CopperBeaconBlockEntity beacon, double animationTick, LightInfo info) {
+        if (!beacon.isActive() || beacon.getIntensityMultiplier() <= 0.0f) {
+            return false;
         }
 
         BlockState state = beacon.getCachedState();
         int luminance = state.getLuminance();
         if (luminance <= 0) {
-            return;
+            return false;
         }
 
-        CopperBeaconPose.evaluate(
-                state.get(CopperBeaconBlock.MOUNT),
-                state.get(Properties.FACING),
-                beacon.yawAngleAt(animationTick),
-                beacon.pitchAngleAt(animationTick),
+        CopperBeaconPose.evaluate(state.get(CopperBeaconBlock.MOUNT), state.get(Properties.FACING),
+                beacon.yawAngleAt(animationTick), beacon.pitchAngleAt(animationTick),
                 scratchPlacedBeaconPose);
         Vector3f direction = scratchPlacedBeaconPose.direction();
         Vector3f emitter = scratchPlacedBeaconPose.emitter();
@@ -314,39 +349,34 @@ public class LightManager {
             blue = (color & 0xFF) / 255.0f;
         }
 
-        float intensity = BeaconBeam.intensity(luminance)
-                * beacon.getIntensityMultiplier();
-        LightInfoLightShaping shaping = new LightInfoLightShaping();
-        shaping.direction = new Float3D(direction.x(), direction.y(), direction.z());
-        shaping.coneAngleDegrees = beacon.getConeAngle();
-        shaping.coneSoftness = BeaconBeam.CONE_SOFTNESS;
-        shaping.focusExponent = BeaconBeam.FOCUS_EXPONENT;
-
-        try {
-            LightInfo info = LightInfo.builder()
-                    .radiance(red * intensity, green * intensity, blue * intensity)
-                    .diskExt(LightInfoDiskEXT.builder()
-                            .position(
-                                    pos.getX() + emitter.x(),
-                                    pos.getY() + emitter.y(),
-                                    pos.getZ() + emitter.z())
-                            .xAxis(xAxis.x(), xAxis.y(), xAxis.z())
-                            .xRadius(BeaconBeam.RADIUS)
-                            .yAxis(yAxis.x(), yAxis.y(), yAxis.z())
-                            .yRadius(BeaconBeam.RADIUS)
-                            .direction(direction.x(), direction.y(), direction.z())
-                            .shaping(shaping)
-                            .volumetricRadianceScale(BeaconBeam.VOLUMETRIC_SCALE)
-                            .build())
-                    .build();
-            putPlacedBeaconLight(beacon, info);
-            seenPlacedBeacons.add(beacon);
-        } catch (RemixException e) {
-            LOGGER.error(
-                    "Failed to update Copper Beacon light at {}: {}",
-                    beacon.getPos(),
-                    e.getMessage());
-        }
+        float intensity = BeaconBeam.intensity(luminance) * beacon.getIntensityMultiplier();
+        info.radiance.x = red * intensity;
+        info.radiance.y = green * intensity;
+        info.radiance.z = blue * intensity;
+        var disk = info.diskExt;
+        disk.position.x = (float) ((double) pos.getX() + emitter.x());
+        disk.position.y = (float) ((double) pos.getY() + emitter.y());
+        disk.position.z = (float) ((double) pos.getZ() + emitter.z());
+        disk.xAxis.x = xAxis.x();
+        disk.xAxis.y = xAxis.y();
+        disk.xAxis.z = xAxis.z();
+        disk.yAxis.x = yAxis.x();
+        disk.yAxis.y = yAxis.y();
+        disk.yAxis.z = yAxis.z();
+        disk.direction.x = direction.x();
+        disk.direction.y = direction.y();
+        disk.direction.z = direction.z();
+        disk.shaping_direction.x = direction.x();
+        disk.shaping_direction.y = direction.y();
+        disk.shaping_direction.z = direction.z();
+        disk.xRadius = BeaconBeam.RADIUS;
+        disk.yRadius = BeaconBeam.RADIUS;
+        disk.shaping_hasvalue = true;
+        disk.shaping_coneAngleDegrees = beacon.getConeAngle();
+        disk.shaping_coneSoftness = BeaconBeam.CONE_SOFTNESS;
+        disk.shaping_focusExponent = BeaconBeam.FOCUS_EXPONENT;
+        disk.volumetricRadianceScale = BeaconBeam.VOLUMETRIC_SCALE;
+        return true;
     }
 
     private void putPlacedBeaconLight(
@@ -607,7 +637,7 @@ public class LightManager {
         if (data == null) return;
 
         BlockState state = data.blockState();
-        if (!(state.getBlock() instanceof SpotLightBlock beacon)) return;
+        if (!com.nvidia.rtxremix.minecraft.compat.ContentSupport.present() || !(state.getBlock() instanceof SpotLightBlock beacon)) return;
 
         int luminance = state.getLuminance();
         if (luminance <= 0) return;
@@ -668,13 +698,13 @@ public class LightManager {
         if (yRadius < MIN_DISPLAY_BEACON_RADIUS) return;
         diskY.normalize();
 
-        LightEntry.ColorOverride color = beacon.beamColor();
+        var color = beacon.beamColor();
         // The sweeping block_display lighthouse is tuned independently and sits
         // outside the placed/held Copper Beacon user control.
         float intensity = BeaconBeam.displayIntensity(luminance);
-        float r = color.hasColor() ? color.r() : 1.0f;
-        float g = color.hasColor() ? color.g() : 1.0f;
-        float b = color.hasColor() ? color.b() : 1.0f;
+        float r = color.r();
+        float g = color.g();
+        float b = color.b();
 
         LightInfoLightShaping shaping = new LightInfoLightShaping();
         shaping.direction = new Float3D(beam.x(), beam.y(), beam.z());
@@ -760,6 +790,7 @@ public class LightManager {
     }
 
     private static SpotLightBlock heldBeacon(ItemStack stack) {
+        if (!com.nvidia.rtxremix.minecraft.compat.ContentSupport.present()) return null;
         if (stack == null || stack.isEmpty()
                 || !(stack.getItem() instanceof BlockItem blockItem)
                 || !(blockItem.getBlock() instanceof SpotLightBlock beacon)) {
@@ -818,13 +849,13 @@ public class LightManager {
             }
         }
 
-        LightEntry.ColorOverride color = beacon.beamColor();
+        var color = beacon.beamColor();
         float intensity = BeaconBeam.heldIntensity(luminance)
                 * BeaconBeam.heldConeRadianceScale(coneAngle)
                 * powerPreservingRadianceScale(viewModelScale);
-        float r = color.hasColor() ? color.r() : 1.0f;
-        float g = color.hasColor() ? color.g() : 1.0f;
-        float b = color.hasColor() ? color.b() : 1.0f;
+        float r = color.r();
+        float g = color.g();
+        float b = color.b();
 
         LightInfoLightShaping shaping = new LightInfoLightShaping();
         shaping.direction = new Float3D((float) look.x, (float) look.y, (float) look.z);
@@ -896,7 +927,7 @@ public class LightManager {
         Block block = bi.getBlock();
         // Skips both the rule-derived light below and the luminance fallback at
         // the end of this method; see OverridesItemLight.
-        if (block instanceof OverridesItemLight) {
+        if (block instanceof OverridesItemLight || (com.nvidia.rtxremix.minecraft.compat.ContentSupport.present() && block instanceof SpotLightBlock)) {
             return null;
         }
 
@@ -1221,7 +1252,9 @@ public class LightManager {
         entityLights.clear();
         for (RemixLight light : placedBeaconLights.values())
             if (!light.isDeleted()) light.destroy();
+        com.nvidia.rtxremix.minecraft.compat.MovingBlockLighting.clear();
         placedBeaconLights.clear();
+        placedBeaconDefinitions.clear();
         seenPlacedBeacons.clear();
         lightOwnerIds.clear();
         heldLightPlacement.clear();

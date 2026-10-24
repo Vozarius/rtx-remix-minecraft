@@ -243,15 +243,25 @@ public final class BlockLightRuleManager {
     private BlockLightRuleManager() {}
 
     public static List<LightEntry> resolve(BlockState state, BlockPos pos, ModelSampler sampler) {
+        return resolve(state, pos, sampler, state.getLuminance());
+    }
+
+    public static List<LightEntry> resolve(BlockState state, BlockPos pos, ModelSampler sampler, int luminance) {
         if (state.isAir()) {
             return List.of();
         }
-        return activeCatalog.resolve(state, pos, sampler);
+        List<LightEntry> entries = activeCatalog.resolve(state, pos, sampler);
+        if (!entries.isEmpty() || activeCatalog.hasMatchingRules(state)) return entries;
+        return AutomaticBlockLights.resolve(state, pos, luminance);
     }
 
     /** Fast preflight used by section capture to avoid model-sampler setup for ordinary blocks. */
     public static boolean hasMatchingRules(BlockState state) {
-        return !state.isAir() && activeCatalog.hasMatchingRules(state);
+        return hasMatchingRules(state, state.getLuminance());
+    }
+
+    public static boolean hasMatchingRules(BlockState state, int luminance) {
+        return !state.isAir() && (activeCatalog.hasMatchingRules(state) || AutomaticBlockLights.supports(state, luminance));
     }
 
     private static List<LightEntry> appendResolved(List<LightEntry> resolved, Rule rule,

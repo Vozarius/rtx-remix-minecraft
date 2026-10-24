@@ -522,7 +522,7 @@ public final class LabPBRConverter {
 
     private static boolean isVariantResource(Identifier id) {
         String path = id.getPath();
-        return path.endsWith("_n.png") || path.endsWith("_s.png") || path.endsWith("_sss.png");
+        return path.endsWith("_e.png") || path.endsWith("_n.png") || path.endsWith("_s.png") || path.endsWith("_sss.png");
     }
 
     private static NativeImage loadResource(Resource resource) {

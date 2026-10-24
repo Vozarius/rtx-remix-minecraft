@@ -306,12 +306,15 @@ public final class DirectQuadWriter {
                                int color, Identifier spriteId, float su0, float sv0, float su1, float sv1,
                                String renderLayer, BlockTextureManager tex, int[] vertexColors) {
         int layerType = BlockTextureManager.layerType(renderLayer);
-        boolean isWater = spriteId == null;
+        String fluidBucket = tex != null && spriteId != null ? tex.fluidBucket(spriteId) : null;
+        boolean isWater = spriteId == null || (spriteId.getNamespace().equals("minecraft")
+                && (spriteId.getPath().equals("block/water_still") || spriteId.getPath().equals("block/water_flow") || spriteId.getPath().equals("block/water_overlay")));
+        boolean tiled = isWater || fluidBucket != null;
 
-        int cat = isBlendedLayer(renderLayer) ? ChunkManager.CAT_TRANSLUCENT
+        int cat = tiled || isBlendedLayer(renderLayer) ? ChunkManager.CAT_TRANSLUCENT
                                               : ChunkManager.CAT_SOLID;
 
-        String bk = isWater ? "water" : renderLayer;
+        String bk = fluidBucket != null ? fluidBucket : isWater ? "water" : renderLayer;
         BlockTextureManager.SpriteEntry se = (spriteId != null && tex != null)
                 ? tex.getSpriteById(spriteId) : null;
         if (se != null && se.hasSSS && tex != null && tex.getAtlasMaterialSSS(layerType) != null) {
@@ -321,9 +324,9 @@ public final class DirectQuadWriter {
 
         BucketBuffer bb = getBucket(cat, bucketKey);
 
-        int boundsMin = isWater ? HardcodedVertex.packHalf2x16(0, 0)
+        int boundsMin = tiled ? HardcodedVertex.packHalf2x16(0, 0)
                                 : HardcodedVertex.packHalf2x16(su0, sv0);
-        int boundsMax = isWater ? HardcodedVertex.packHalf2x16(1, 1)
+        int boundsMax = tiled ? HardcodedVertex.packHalf2x16(1, 1)
                                 : HardcodedVertex.packHalf2x16(su1, sv1);
 
         bb.writeQuad(positions, 0, uvs, 0, nx, ny, nz, color, vertexColors, 0, boundsMin, boundsMax);
@@ -537,6 +540,7 @@ public final class DirectQuadWriter {
                     ? tex.getSpriteById(spriteId)
                     : null;
             stageSpriteEntry[i] = sprite;
+            if(sprite!=null && com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.get().isGlassSprite(sprite.id)) stageLayer[i]="glass";
             boolean needsBlend = isBlendedLayer(stageLayer[i])
                     || (sprite != null && quadSamplesTransparentTexels(i, sprite));
             stageNeedsAlphaBlend[i] = needsBlend;

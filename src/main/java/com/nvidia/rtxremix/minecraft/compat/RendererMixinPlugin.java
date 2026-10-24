@@ -15,6 +15,7 @@ public final class RendererMixinPlugin implements IMixinConfigPlugin {
     @Override public void onLoad(String mixinPackage) {}
     @Override public String getRefMapperConfig() { return null; }
     @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (net.neoforged.fml.loading.FMLEnvironment.dist == net.neoforged.api.distmarker.Dist.DEDICATED_SERVER) return false;
         if (mixinClassName.endsWith(".EntityCullingVisibilityMixin")) {
             return present("dev/tr7zw/entityculling/mixin/CullableMixin.class");
         }

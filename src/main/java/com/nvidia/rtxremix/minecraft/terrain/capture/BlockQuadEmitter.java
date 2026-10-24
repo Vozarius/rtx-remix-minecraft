@@ -232,9 +232,9 @@ public final class BlockQuadEmitter {
     public void stageRenderedQuad(float[] positions, float[] uvs, int[] colors,
                                   float nx, float ny, float nz, Sprite sprite, String layer) {
         Identifier id = sprite == null ? null : sprite.getContents().getId();
-        if (isWaterSprite(id)) {
+        if (isWaterSprite(id) || (texManager != null && texManager.fluidBucket(id) != null)) {
             System.arraycopy(positions, 0, tempPositions, 0, 12);
-            emitBlockWaterQuad(nx, ny, nz, colors[0], layer, colors);
+            emitBlockWaterQuad(nx, ny, nz, colors[0], layer, colors, id);
             return;
         }
         writer.stageQuad(positions, uvs, nx, ny, nz, colors[0], id,
@@ -320,7 +320,8 @@ public final class BlockQuadEmitter {
         }
 
         if (state.isAir()) return;
-        if (!BlockLightRuleManager.hasMatchingRules(state)) return;
+        int luminance = state.getLightEmission(world, pos);
+        if (!BlockLightRuleManager.hasMatchingRules(state, luminance)) return;
 
         // The sampler needs the same seed the mesh uses, so a rule reading
         // model geometry sees the variant this position actually draws.
@@ -333,7 +334,7 @@ public final class BlockQuadEmitter {
         // on an offset block would need the same offset passed into begin() and
         // into the LightEntry positions.
         modelSampling.begin(blockRenderManager, state, state.getRenderingSeed(pos), (BlockRenderView) world, pos);
-        List<LightEntry> resolvedLights = BlockLightRuleManager.resolve(state, pos, modelSampling);
+        List<LightEntry> resolvedLights = BlockLightRuleManager.resolve(state, pos, modelSampling, luminance);
         lights.addAll(resolvedLights);
     }
 
@@ -482,8 +483,8 @@ public final class BlockQuadEmitter {
 
         Sprite sprite = bq.getSprite();
         Identifier spriteId = sprite != null ? sprite.getContents().getId() : null;
-        if (isWaterSprite(spriteId)) {
-            emitBlockWaterQuad(nx, ny, nz, color, layerName);
+        if (isWaterSprite(spriteId) || (texManager != null && texManager.fluidBucket(spriteId) != null)) {
+            emitBlockWaterQuad(nx, ny, nz, color, layerName, null, spriteId);
             return;
         }
         float su0 = sprite != null ? sprite.getMinU() : 0;
@@ -500,11 +501,13 @@ public final class BlockQuadEmitter {
     }
 
     private static final Identifier WATER_STILL_SPRITE = Identifier.ofVanilla("block/water_still");
+    private static final Identifier WATER_OVERLAY_SPRITE = Identifier.ofVanilla("block/water_overlay");
     private static final Identifier WATER_FLOW_SPRITE = Identifier.ofVanilla("block/water_flow");
 
     /** A block-model face painted with the water texture: the cauldron's water level is the vanilla case. */
     static boolean isWaterSprite(Identifier spriteId) {
-        return WATER_STILL_SPRITE.equals(spriteId) || WATER_FLOW_SPRITE.equals(spriteId);
+        return WATER_STILL_SPRITE.equals(spriteId) || WATER_FLOW_SPRITE.equals(spriteId)
+                || WATER_OVERLAY_SPRITE.equals(spriteId);
     }
 
     /**
@@ -514,11 +517,7 @@ public final class BlockQuadEmitter {
      * positions along the face's dominant axes, exactly as the fluid path maps
      * its top and side faces.
      */
-    private void emitBlockWaterQuad(float nx, float ny, float nz, int color, String layerName) {
-        emitBlockWaterQuad(nx, ny, nz, color, layerName, null);
-    }
-
-    private void emitBlockWaterQuad(float nx, float ny, float nz, int color, String layerName, int[] vertexColors) {
+    private void emitBlockWaterQuad(float nx, float ny, float nz, int color, String layerName, int[] vertexColors, Identifier spriteId) {
         float tileSize = BlockTextureManager.getWaterTileSize();
         float ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
         for (int v = 0; v < 4; v++) {
@@ -537,7 +536,7 @@ public final class BlockQuadEmitter {
             tempUvs[v * 2 + 1] = w;
         }
         writer.writeFluidQuad(tempPositions, tempUvs, nx, ny, nz, color,
-                null, 0, 0, 1, 1, layerName, texManager, vertexColors);
+                spriteId, 0, 0, 1, 1, layerName, texManager, vertexColors);
     }
 
     // --- Fluid geometry ---
@@ -556,13 +555,13 @@ public final class BlockQuadEmitter {
         if (fluidSprites == null || fluidSprites.length < 2) return;
 
         boolean isLava = fluidState.isIn(FluidTags.LAVA);
-        boolean isWater = !isLava;
+        boolean isWater = !isLava || (texManager != null && texManager.fluidBucket(fluidSprites[0].getContents().getId()) != null);
         String layer = isLava ? "solid" : "translucent";
         int fluidColor = isWater
                 ? getCachedWaterColor(handler, world, fluidState, lx, ly, lz)
                 : handler.getTintColor(fluidState, world, fluidPos);
         int r = (fluidColor >> 16) & 0xFF, g = (fluidColor >> 8) & 0xFF, b = fluidColor & 0xFF;
-        int color = 0xFF000000 | (r << 16) | (g << 8) | b;
+        int color = (fluidColor & 0xFF000000) | (r << 16) | (g << 8) | b;
 
         float h00 = getFluidHeight(world, fluidState, baseX + lx, baseY + ly, baseZ + lz);
         float h10 = getFluidHeight(world, fluidState, baseX + lx + 1, baseY + ly, baseZ + lz);
@@ -607,11 +606,11 @@ public final class BlockQuadEmitter {
                 float u1 = TiledTextureCoordinates.tile(baseX, lx + 1, tileSize), v1 = TiledTextureCoordinates.tile(baseZ, lz + 1, tileSize);
                 setUv4(tempUvs, u0, v0, u1, v0, u1, v1, u0, v1);
                 writer.writeFluidQuad(tempPositions, tempUvs, 0, 1, 0, color,
-                        null, 0, 0, 1, 1, layer, texManager);
+                        stillId, 0, 0, 1, 1, layer, texManager);
                 setPos4(tempPositions, lx, ly + h01, lz + 1, lx + 1, ly + h11, lz + 1,
                         lx + 1, ly + h10, lz, lx, ly + h00, lz);
                 writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
-                        null, 0, 0, 1, 1, layer, texManager);
+                        stillId, 0, 0, 1, 1, layer, texManager);
             } else {
                 // Vanilla FluidRenderer: a still surface shows the still sprite in
                 // full; a moving one shows the centre quarter of the flowing sprite
@@ -661,7 +660,7 @@ public final class BlockQuadEmitter {
                 float u1 = TiledTextureCoordinates.tile(baseX, lx + 1, tileSize), v1 = TiledTextureCoordinates.tile(baseZ, lz + 1, tileSize);
                 setUv4(tempUvs, u0, v1, u1, v1, u1, v0, u0, v0);
                 writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
-                        null, 0, 0, 1, 1, layer, texManager);
+                        stillId, 0, 0, 1, 1, layer, texManager);
             } else {
                 setUv4(tempUvs, su0, sv0, su1, sv0, su1, sv1, su0, sv1);
                 writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
@@ -720,7 +719,7 @@ public final class BlockQuadEmitter {
                 sV0 = TiledTextureCoordinates.tile(baseY, ly, tileSize); sV1 = TiledTextureCoordinates.tile(baseY, ly + 1, tileSize);
                 setUv4(tempUvs, sU0, sV1, sU1, sV1, sU1, sV0, sU0, sV0);
                 writer.writeFluidQuad(tempPositions, tempUvs, fnx, fny, fnz, color,
-                        null, 0, 0, 1, 1, layer, texManager);
+                        stillId, 0, 0, 1, 1, layer, texManager);
             } else {
                 // Vanilla FluidRenderer side mapping: one tile is half the flowing
                 // sprite, so U spans its left half and V runs from the fluid surface
@@ -1005,7 +1004,7 @@ public final class BlockQuadEmitter {
         // refract through it instead, so clear glass takes its own layer and a
         // translucent material with the frame as a diffuse layer.
         // Stained glass is already translucent and keeps vanilla's layer.
-        if (state.isOf(Blocks.GLASS) || state.isOf(Blocks.GLASS_PANE)) return "glass";
+        if (com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.glass(state)) return "glass";
         if (layer == RenderLayer.getSolid()) return "solid";
         if (layer == RenderLayer.getCutoutMipped()) return "cutout_mipped";
         if (layer == RenderLayer.getCutout()) return "cutout";

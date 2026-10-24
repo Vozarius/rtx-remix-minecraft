@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
-import com.nvidia.rtxremix.minecraft.block.SpotLightBlock;
+import com.nvidia.rtxremix.content.SpotLightBlock;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
