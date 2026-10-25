@@ -241,7 +241,8 @@ public abstract class WorldRendererMixin
      */
     @Inject(method = "scheduleBlockRenders(III)V", at = @At("HEAD"), cancellable = true)
     private void rtxremix$filterChunkLoadReflags(int cx, int sy, int cz, CallbackInfo ci) {
-        if (!RtxRemixMod.isRtxEnabled() || !NeighbourReflagFilter.ENABLED || chunks == null) {
+        if (!RtxRemixMod.isRtxEnabled() || RendererPresence.hasSodium() || !NeighbourReflagFilter.ENABLED
+                || chunks == null) {
             return;
         }
         ((BuiltChunkStorageSectionAccess) chunks).rtxremix$flagLoadedSection(cx, sy, cz);
@@ -250,6 +251,8 @@ public abstract class WorldRendererMixin
 
     @Override
     public void rtxremix$onNeighbourColumnInvalidated(int cx, int cz) {
+        if (RendererPresence.hasSodium())
+            return;
         if (chunks != null) {
             ((BuiltChunkStorageSectionAccess) chunks).rtxremix$clearNeighbourSnapshotBits(cx, cz);
         }

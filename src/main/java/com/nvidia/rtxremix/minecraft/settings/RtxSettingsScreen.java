@@ -104,8 +104,7 @@ public final class RtxSettingsScreen extends Screen {
                         settings.hasOverrides(SettingGroup.BLOCK_LIGHTS);
                 settings.resetAll();
                 BlockTextureManager textures = BlockTextureManager.get();
-                boolean rebuildMaterials = textures != null
-                        && textures.commitTerrainEmissionMultiplier();
+                boolean rebuildMaterials = textures != null && textures.commitMaterialSettings();
                 if (saveSettings != null) {
                     saveSettings.run();
                 }

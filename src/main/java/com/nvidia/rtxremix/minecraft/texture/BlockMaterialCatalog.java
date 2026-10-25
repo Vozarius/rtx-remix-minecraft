@@ -40,6 +40,12 @@ public final class BlockMaterialCatalog {
     private final Set<Block> glassBlocks = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<Block> potentialEmitters = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<Identifier> glassSprites = new HashSet<>();
+    public record FluidProfile(
+            Identifier id, Identifier still, Identifier flow, Identifier overlay, Fluid fluid) {}
+    private final Map<Fluid, FluidProfile> fluidProfiles = new IdentityHashMap<>();
+    public Map<Fluid, FluidProfile> fluidProfiles() {
+        return java.util.Collections.unmodifiableMap(fluidProfiles);
+    }
     private final Map<Identifier, Fluid> fluidSprites = new HashMap<>();
 
     private BlockMaterialCatalog() {}
@@ -97,6 +103,8 @@ public final class BlockMaterialCatalog {
             Identifier overlay = ext.getOverlayTexture();
             if (overlay != null)
                 next.fluidSprites.put(overlay, fluid);
+            next.fluidProfiles.put(
+                    fluid, new FluidProfile(Registries.FLUID.getId(fluid), still, flow, overlay, fluid));
         }
         active = next;
     }

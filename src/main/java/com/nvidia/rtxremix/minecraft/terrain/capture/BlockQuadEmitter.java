@@ -403,7 +403,7 @@ public final class BlockQuadEmitter {
         int ly = ChunkSectionPos.getLocalCoord(pos.getY());
         int lz = ChunkSectionPos.getLocalCoord(pos.getZ());
         cacheLocalFluidState(localIndex(lx, ly, lz), fluidState);
-        emitFluidQuads(world, fluidState, lx, ly, lz);
+        emitFluidQuadsScoped(world, fluidState, lx, ly, lz);
     }
 
     /**
@@ -540,6 +540,15 @@ public final class BlockQuadEmitter {
     }
 
     // --- Fluid geometry ---
+
+    private void emitFluidQuadsScoped(BlockRenderView world, FluidState fluidState, int lx, int ly, int lz) {
+        var previous = com.nvidia.rtxremix.minecraft.texture.FluidCaptureContext.set(fluidState.getFluid());
+        try {
+            emitFluidQuads(world, fluidState, lx, ly, lz);
+        } finally {
+            com.nvidia.rtxremix.minecraft.texture.FluidCaptureContext.set(previous);
+        }
+    }
 
     private void emitFluidQuads(BlockRenderView world, FluidState fluidState,
                                  int lx, int ly, int lz) {
@@ -904,9 +913,21 @@ public final class BlockQuadEmitter {
         int neighborY = mutablePos.getY() + side.getOffsetY();
         int neighborZ = mutablePos.getZ() + side.getOffsetZ();
         BlockState neighbor = getCachedBlockState(world, neighborX, neighborY, neighborZ);
+        // Repeating whole-block culling loses the material-part context of multipart
+        // copycats. Their model has already culled its own quads; neighbouring blocks
+        // must conservatively keep their face against a partially filled neighbour.
+        if (ModelFaceCulling.ownsOcclusion(state.getBlock().getClass())
+                || ModelFaceCulling.ownsOcclusion(neighbor.getBlock().getClass()))
+            return true;
+        // External face hiding may read block-entity materials, which are not part
+        // of a block-state pair and can change independently at another position.
+        if (state.hasBlockEntity() || neighbor.hasBlockEntity() || state.supportsExternalFaceHiding()
+                || state.getBlock().hasDynamicBounds() || neighbor.getBlock().hasDynamicBounds()) {
+            neighborPos.set(neighborX, neighborY, neighborZ);
+            return Block.shouldDrawSide(state, world, mutablePos, side, neighborPos);
+        }
         long key = ((long) Block.getRawIdFromState(state) << 35)
-                | ((long) Block.getRawIdFromState(neighbor) << 3)
-                | side.ordinal();
+                | ((long) Block.getRawIdFromState(neighbor) << 3) | side.ordinal();
         int slot = (int) ((key * 0x9E3779B97F4A7C15L) >>> (64 - FACE_CULL_CACHE_BITS));
         if (faceCullKeys[slot] == key && faceCullResults[slot] != FACE_CULL_UNKNOWN) {
             return faceCullResults[slot] == FACE_CULL_DRAWN;

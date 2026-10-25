@@ -53,7 +53,8 @@ public abstract class ClientChunkManagerMixin {
      */
     @Inject(method = "onLightUpdate", at = @At("HEAD"), cancellable = true)
     private void rtxremix$skipLightOnlyRebuild(LightType type, ChunkSectionPos pos, CallbackInfo ci) {
-        if (RtxRemixMod.isRtxEnabled()) {
+        if (RtxRemixMod.isRtxEnabled()
+                && !com.nvidia.rtxremix.minecraft.compat.RendererPresence.hasWorkerRenderers()) {
             SkippedSectionRebuilds.recordLightOnly();
             ci.cancel();
         }

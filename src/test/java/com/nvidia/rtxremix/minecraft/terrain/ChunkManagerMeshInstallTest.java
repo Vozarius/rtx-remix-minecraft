@@ -105,7 +105,7 @@ class ChunkManagerMeshInstallTest {
     }
 
     @Test
-    void staleResultRequiresExactOwnerGenerationAndEpochAcrossReload() throws Exception {
+    void busyColumnPublishesSnapshotsButStillRejectsReplacedOwnersAndEpochs() throws Exception {
         ChunkManager manager = new ChunkManager(null);
         try {
             TerrainState terrain = terrain(manager);
@@ -120,8 +120,9 @@ class ChunkManagerMeshInstallTest {
             assertFalse(isStale(manager, firstResult));
 
             markColumnDirty(manager, 7, -9, 1 << ChunkManager.CAT_CUTOUT);
-            assertTrue(isStale(manager, firstResult),
-                    "A newer capture of the same column must invalidate the old generation");
+            assertFalse(isStale(manager, firstResult),
+                    "A complete snapshot must make progress while its newer dirty successor remains queued");
+            assertTrue(intField(firstOwner, "dirtyMask") != 0);
 
             Object currentFirstResult = newResult(firstOwner, intField(firstOwner, "generation"),
                     1 << ChunkManager.CAT_CUTOUT, new int[ChunkManager.CAT_COUNT],

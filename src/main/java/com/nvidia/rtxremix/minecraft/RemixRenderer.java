@@ -520,6 +520,7 @@ public class RemixRenderer {
         if (!initialized) return;
 
         applyPendingWorldResourceChanges();
+        com.nvidia.rtxremix.minecraft.compat.dh.DistantScene.beginFrame();
         if (RtxRemixMod.isBlockEntitiesEnabled()) {
             preloadEntityAtlasesForCapture();
         }
@@ -750,6 +751,7 @@ public class RemixRenderer {
             
             if (world == null || client.gameRenderer == null) {
                 if (chunkManager != null) chunkManager.hideRetainedInstances();
+                com.nvidia.rtxremix.minecraft.compat.dh.DistantScene.hide(remixApi);
                 discardPendingParticleFrame();
                 // Closed by the finally, like the RTX-disabled branch below. endFrame is not
                 // idempotent: it re-adds elapsed from the same frame start and refolds min,
@@ -767,6 +769,7 @@ public class RemixRenderer {
             // intentionally left untouched so off<->on transitions don't desync.
             if (!RtxRemixMod.isRtxEnabled()) {
                 if (chunkManager != null) chunkManager.hideRetainedInstances();
+                com.nvidia.rtxremix.minecraft.compat.dh.DistantScene.hide(remixApi);
                 // A payload prepared before the toggle holds world-space vertices from the
                 // old camera position; publishing it on re-enable would draw stale geometry.
                 discardPendingParticleFrame();
@@ -812,11 +815,14 @@ public class RemixRenderer {
             if (RtxRemixMod.isWorldEnabled()) {
                 try {
                     chunkManager.updateVisibleChunks(world, cameraPos, perfTimer, perfChunkGen, perfChunkDraw);
+                    com.nvidia.rtxremix.minecraft.compat.dh.DistantScene.update(
+                            world, cameraPos, client.options.getClampedViewDistance(), remixApi);
                 } catch (Exception e) {
                     LOGGER.error("Error updating chunks", e);
                 }
             } else {
                 chunkManager.hideRetainedInstances();
+                com.nvidia.rtxremix.minecraft.compat.dh.DistantScene.hide(remixApi);
             }
 
             entitySubmitter.beginFrame();
@@ -1458,7 +1464,8 @@ public class RemixRenderer {
         LOGGER.info("Clearing world resources...");
         joinInFlightParticleRenderTask();
         discardPendingParticleFrame();
-        
+
+        com.nvidia.rtxremix.minecraft.compat.dh.DistantScene.clear(remixApi);
         if (chunkManager != null) {
             chunkManager.clear();
         }
@@ -1525,6 +1532,7 @@ public class RemixRenderer {
             confLayerDriver = null;
         }
 
+        com.nvidia.rtxremix.minecraft.compat.dh.DistantScene.clear(remixApi);
         if (chunkManager != null) {
             chunkManager.destroy();
         }

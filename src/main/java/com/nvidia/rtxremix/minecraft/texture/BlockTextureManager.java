@@ -83,6 +83,7 @@ public class BlockTextureManager {
     private byte[] albedoRGBA;
     private RemixTexture atlasAlbedo;
     private RemixTexture atlasEmissive;
+    private RemixTexture glassTransmissionAtlas;
     private RemixTexture atlasNormalTex;
     private RemixTexture atlasHeightTex;
     private RemixTexture atlasRoughnessTex;
@@ -100,6 +101,9 @@ public class BlockTextureManager {
     private final List<RemixTexture> managedTextures = new ArrayList<>();
     private final List<RemixMaterial> managedMaterials = new ArrayList<>();
     private RemixMaterial waterSurfaceMaterial;
+    private volatile Map<net.minecraft.fluid.Fluid, String> fluidTypeBuckets = Map.of();
+    private volatile Map<net.minecraft.fluid.Fluid, Integer> fluidTypeLayers = Map.of();
+    private volatile List<Identifier> fluidEntityIds = List.of();
     private volatile Map<Identifier, String> fluidBuckets = Map.of();
     private volatile Map<String, RemixMaterial> fluidMaterials = Map.of();
     private volatile Map<Identifier, RemixMaterial> entityFluidMaterials = Map.of();
@@ -116,6 +120,28 @@ public class BlockTextureManager {
     private float terrainEmissionMultiplier = DEFAULT_TERRAIN_EMISSION_MULTIPLIER;
     private float appliedTerrainEmissionMultiplier = DEFAULT_TERRAIN_EMISSION_MULTIPLIER;
     private boolean terrainEmissionMaterialsInitialized;
+    private float proceduralNormalStrength = 1f, proceduralHeightStrength = .12f;
+    private float appliedProceduralNormalStrength = 1f, appliedProceduralHeightStrength = .12f;
+    public float getProceduralNormalStrength() {
+        return proceduralNormalStrength;
+    }
+    public float getProceduralHeightStrength() {
+        return proceduralHeightStrength;
+    }
+    public void setProceduralNormalStrength(float value) {
+        proceduralNormalStrength = Math.max(0, Math.min(4, value));
+    }
+    public void setProceduralHeightStrength(float value) {
+        proceduralHeightStrength = Math.max(0, Math.min(1, value));
+    }
+    public boolean commitMaterialSettings() {
+        boolean changed = commitTerrainEmissionMultiplier()
+                | Float.compare(proceduralNormalStrength, appliedProceduralNormalStrength) != 0
+                | Float.compare(proceduralHeightStrength, appliedProceduralHeightStrength) != 0;
+        appliedProceduralNormalStrength = proceduralNormalStrength;
+        appliedProceduralHeightStrength = proceduralHeightStrength;
+        return changed;
+    }
 
     /**
      * Cached LabPBR data for one animated sprite, built once at atlas init
@@ -173,7 +199,9 @@ public class BlockTextureManager {
         private final BitSet transparentPixels;
         RemixTexture albedo, normal, roughness, metallic, height, emissive, sss, sssAlbedo;
         public boolean hasPBR, hasSSS;
-        Identifier fluidEntityTexture;
+        boolean generatedSurface, authoredEmissionMask;
+        float maskCoverage = 1;
+        int fluidEntityLayer = -1;
         float[] lightColor;
 
         SpriteEntry(int i, Identifier id, Sprite s) {
@@ -261,6 +289,10 @@ public class BlockTextureManager {
             AbstractTexture tex = client.getTextureManager().getTexture(BLOCK_ATLAS_ID);
             if (!(tex instanceof SpriteAtlasTexture spriteAtlas)) return;
 
+            if (!terrainEmissionMaterialsInitialized) {
+                appliedProceduralNormalStrength = proceduralNormalStrength;
+                appliedProceduralHeightStrength = proceduralHeightStrength;
+            }
             captureAtlas(api, spriteAtlas);
             LabPBRConverter.VariantCache labPBRVariants;
             try (ProfileScope ignored = ProfileScope.begin("LabPBR.variantScan")) {
@@ -331,6 +363,15 @@ public class BlockTextureManager {
                     se.emissive = upload(api, "s" + se.index + "_mask", emission, se.pixW, se.pixH,
                             TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
                     se.lightColor = computeLightColor(alb, emission, se.pixW, se.pixH);
+                }
+                se.generatedSurface = nI == null;
+                if (eI != null) {
+                    se.authoredEmissionMask = true;
+                    float coverage = 0;
+                    for (int y = 0; y < eI.getHeight(); y++)
+                        for (int x = 0; x < eI.getWidth(); x++)
+                            coverage += EmissionMask.strength(eI.getColor(x, y));
+                    se.maskCoverage = coverage / (eI.getWidth() * eI.getHeight());
                 }
                 if (se.emissive != null) emissiveCount++;
                 if (se.lightColor != null) {
@@ -465,6 +506,18 @@ public class BlockTextureManager {
                     LabPBRConverter.applyAO(sssAlbedoAtlas, atlasW, nI, se.pixX, se.pixY, se.pixW, se.pixH);
                     hasAnyNormal = true;
                     hasAnyHeight = true;
+                } else if (se.generatedSurface && !BlockMaterialCatalog.get().isGlassSprite(se.id)) {
+                    var generated = ProceduralSurfaceMaps.generate(
+                            extractRGBA(se.pixX, se.pixY, se.pixW, se.pixH), se.pixW, se.pixH,
+                            appliedProceduralNormalStrength, appliedProceduralHeightStrength);
+                    for (int y = 0; y < se.pixH; y++) {
+                        System.arraycopy(generated.normal(), y * se.pixW * 4, normalAtlas,
+                                ((se.pixY + y) * atlasW + se.pixX) * 4, se.pixW * 4);
+                        System.arraycopy(generated.height(), y * se.pixW, heightAtlas,
+                                (se.pixY + y) * atlasW + se.pixX, se.pixW);
+                    }
+                    hasAnyNormal = true;
+                    hasAnyHeight = true;
                 }
                 if (sI != null) {
                     LabPBRConverter.blitRoughness(roughnessAtlas, atlasW, sI, se.pixX, se.pixY, se.pixW, se.pixH);
@@ -502,6 +555,18 @@ public class BlockTextureManager {
             }
         }
 
+        byte[] glassTransmission = new byte[albedoRGBA.length];
+        Arrays.fill(glassTransmission, (byte) 255);
+        for (SpriteEntry se : sprites)
+            if (BlockMaterialCatalog.get().isGlassSprite(se.id)) {
+                for (int y = 0; y < se.pixH; y++)
+                    for (int x = 0; x < se.pixW; x++) {
+                        int i = ((se.pixY + y) * atlasW + se.pixX + x) * 4;
+                        GlassOptics.transmission(albedoRGBA, i, glassTransmission, i);
+                    }
+            }
+        glassTransmissionAtlas = upload(api, "glass_transmission", glassTransmission, atlasW, atlasH,
+                TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
         atlasAlbedo = upload(api, "atlas_albedo", albedoRGBA, atlasW, atlasH,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
 
@@ -691,10 +756,15 @@ public class BlockTextureManager {
             mb.emissiveTexture(emissiveTex.getHandle())
                     .emissiveIntensity(terrainEmissionIntensity());
         }
-        return createMaterialViaStore(mb.translucentExt(MaterialInfoTranslucentEXT.builder()
-                .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
-                .transmittanceMeasurementDistance(0.35f)
-                .useDiffuseLayer(true).build()).build());
+        return createMaterialViaStore(
+                mb.translucentExt(MaterialInfoTranslucentEXT.builder()
+                                          .refractiveIndex(COMMON_GLASS_IOR)
+                                          .transmittanceColor(0.97f, 0.97f, 0.97f)
+                                          .transmittanceTexture(glassTransmissionAtlas.getHandle())
+                                          .transmittanceMeasurementDistance(0.2f)
+                                          .useDiffuseLayer(true)
+                                          .build())
+                        .build());
     }
 
     // ====================================================================
@@ -740,9 +810,15 @@ public class BlockTextureManager {
     }
 
     private void destroyWaterResources(RemixAPI api) {
+        fluidTypeBuckets = Map.of();
+        fluidTypeLayers = Map.of();
+        fluidEntityIds = List.of();
+        for (SpriteEntry sprite : sprites) sprite.fluidEntityLayer = -1;
         entityFluidMaterials = Map.of();
         fluidBuckets = Map.of();
-        for (RemixMaterial material : fluidMaterials.values()) destroyManagedMaterial(material);
+        for (RemixMaterial material : new java.util.HashSet<>(fluidMaterials.values()))
+            if (material != waterSurfaceMaterial)
+                destroyManagedMaterial(material);
         fluidMaterials = Map.of();
         for (RemixTexture texture : fluidTextures) destroyManagedTexture(texture);
         fluidTextures.clear();
@@ -830,90 +906,175 @@ public class BlockTextureManager {
         }
     }
 
+    private byte[] spritePixels(Identifier id) {
+        var image = ((SpriteContentsAccessor) MinecraftClient.getInstance()
+                             .getSpriteAtlas(BLOCK_ATLAS_ID)
+                             .apply(id)
+                             .getContents())
+                            .getImage();
+        byte[] rgba = new byte[image.getWidth() * image.getHeight() * 4];
+        for (int y = 0; y < image.getHeight(); y++)
+            for (int x = 0; x < image.getWidth(); x++) {
+                int pixel = image.getColor(x, y), i = (y * image.getWidth() + x) * 4;
+                rgba[i] = (byte) pixel;
+                rgba[i + 1] = (byte) (pixel >>> 8);
+                rgba[i + 2] = (byte) (pixel >>> 16);
+                rgba[i + 3] = (byte) (pixel >>> 24);
+            }
+        return rgba;
+    }
+    /** Both colour and normal sheets use the same 12x10 frame layout. */
+    private byte[] fluidBaseSheet(boolean lava) {
+        Identifier base = Identifier.ofVanilla(lava ? "block/lava_still" : "block/water_still");
+        var sprite = MinecraftClient.getInstance().getSpriteAtlas(BLOCK_ATLAS_ID).apply(base);
+        var contents = sprite.getContents();
+        var image = ((SpriteContentsAccessor) contents).getImage();
+        int tile = 16, columns = Math.max(1, image.getWidth() / contents.getWidth());
+        int frames = Math.max(1, image.getHeight() / contents.getHeight()) * columns;
+        byte[] result = new byte[tile * 12 * tile * 10 * 4];
+        for (int frame = 0; frame < 120; frame++)
+            for (int y = 0; y < tile; y++)
+                for (int x = 0; x < tile; x++) {
+                    int f = frame % frames;
+                    int pixel =
+                            image.getColor(f % columns * contents.getWidth() + x * contents.getWidth() / tile,
+                                    f / columns * contents.getHeight() + y * contents.getHeight() / tile);
+                    int i = ((frame / 12 * tile + y) * tile * 12 + frame % 12 * tile + x) * 4;
+                    result[i] = (byte) pixel;
+                    result[i + 1] = (byte) (pixel >>> 8);
+                    result[i + 2] = (byte) (pixel >>> 16);
+                    result[i + 3] = (byte) 255;
+                }
+        return result;
+    }
     private void buildFluidMaterials(RemixAPI api) {
         Map<Identifier, String> buckets = new HashMap<>();
+        Map<net.minecraft.fluid.Fluid, String> typeBuckets = new java.util.IdentityHashMap<>();
+        Map<net.minecraft.fluid.Fluid, Integer> typeLayers = new java.util.IdentityHashMap<>();
         Map<String, RemixMaterial> variants = new HashMap<>();
         Map<Identifier, RemixMaterial> entityVariants = new HashMap<>();
-        for (var entry : BlockMaterialCatalog.get().fluidSprites().entrySet()) {
-            Identifier id = entry.getKey();
-            SpriteEntry sprite = spriteById.get(id);
-            if (sprite == null)
-                continue;
-            sprite.fluidEntityTexture = Identifier.of("rtx-remix-renderer", "fluid/" + sprite.index);
-            if (id.getNamespace().equals("minecraft") && id.getPath().startsWith("block/water_")) {
-                if (waterSurfaceMaterial != null)
-                    entityVariants.put(sprite.fluidEntityTexture, waterSurfaceMaterial);
-                buckets.put(id, "water");
-                continue;
+        List<Identifier> entityIds = new ArrayList<>();
+        Map<String, RemixMaterial> shared = new HashMap<>();
+        byte[] waterBase = fluidBaseSheet(false), lavaBase = fluidBaseSheet(true);
+        byte[] lavaNormal = new byte[lavaBase.length];
+        for (int fy = 0; fy < 10; fy++)
+            for (int fx = 0; fx < 12; fx++) {
+                byte[] tile = new byte[16 * 16 * 4];
+                for (int y = 0; y < 16; y++)
+                    System.arraycopy(lavaBase, ((fy * 16 + y) * 192 + fx * 16) * 4, tile, y * 64, 64);
+                byte[] normals = ProceduralSurfaceMaps.generate(tile, 16, 16, 1, 0).normal();
+                for (int y = 0; y < 16; y++)
+                    System.arraycopy(normals, y * 64, lavaNormal, ((fy * 16 + y) * 192 + fx * 16) * 4, 64);
             }
-            var image = ((SpriteContentsAccessor) MinecraftClient.getInstance()
-                                 .getSpriteAtlas(BLOCK_ATLAS_ID)
-                                 .apply(id)
-                                 .getContents())
-                                .getImage();
-            byte[] source = new byte[image.getWidth() * image.getHeight() * 4];
-            for (int y = 0; y < image.getHeight(); y++)
-                for (int x = 0; x < image.getWidth(); x++) {
-                    int pixel = image.getColor(x, y), i = (y * image.getWidth() + x) * 4;
-                    source[i] = (byte) pixel;
-                    source[i + 1] = (byte) (pixel >>> 8);
-                    source[i + 2] = (byte) (pixel >>> 16);
-                    source[i + 3] = (byte) (pixel >>> 24);
-                }
-            TextureAverage average = TextureAverage.of(source);
-            byte[] rgba = {(byte) Math.round(average.red() * 255), (byte) Math.round(average.green() * 255),
-                    (byte) Math.round(average.blue() * 255), (byte) Math.round(average.alpha() * 255)};
-            RemixTexture color = upload(api, "fluid_" + sprite.index, rgba, 1, 1, TextureFormat.RGBA8_UNORM,
-                    TexturePurpose.COLOR);
-            if (color == null)
+        RemixTexture lavaNormals = upload(api, "fluid_lava_normal", lavaNormal, 192, 160,
+                TextureFormat.RGBA8_UNORM, TexturePurpose.NORMAL_DX);
+        if (lavaNormals != null)
+            fluidTextures.add(lavaNormals);
+        for (var profile : BlockMaterialCatalog.get().fluidProfiles().values()) {
+            if (profile.still() == null || spriteById.get(profile.still()) == null)
                 continue;
-            fluidTextures.add(color);
-            MaterialInfo.Builder material = MaterialInfo.builder()
-                                                    .albedoTexture(color.getHandle())
-                                                    .normalTexture(waterNormalHandle)
-                                                    .filterMode(1)
-                                                    .spriteSheetRow(10)
-                                                    .spriteSheetCol(12)
-                                                    .spriteSheetFps(20);
-            int luminance = entry.getValue().getFluidType().getLightLevel();
-            if (luminance > 0)
-                material.emissiveTexture(color.getHandle()).emissiveIntensity(luminance * 5f);
-            RemixMaterial created = createMaterialViaStore(
+            boolean vanillaWater = profile.id().getNamespace().equals("minecraft")
+                    && profile.id().getPath().contains("water");
+            boolean lava = FluidTextureStyle.lava(profile.id().toString());
+            TextureAverage average = TextureAverage.of(spritePixels(profile.still()));
+            String key = "fluid:" + profile.id();
+            RemixMaterial created = vanillaWater ? waterSurfaceMaterial : null;
+            int tint = net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions
+                               .of(profile.fluid())
+                               .getTintColor();
+            String sharedKey = profile.still() + ":" + lava + ":"
+                    + profile.fluid().getFluidType().getLightLevel() + ":" + tint;
+            if (!vanillaWater)
+                created = shared.get(sharedKey);
+            if (created == null) {
+                byte[] pixels = FluidTextureStyle.recolor(lava ? lavaBase : waterBase, average);
+                RemixTexture color =
+                        upload(api, key, pixels, 192, 160, TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
+                if (color == null)
+                    continue;
+                fluidTextures.add(color);
+                MaterialInfo.Builder material = MaterialInfo.builder()
+                                                        .albedoTexture(color.getHandle())
+                                                        .filterMode(1)
+                                                        .spriteSheetRow(10)
+                                                        .spriteSheetCol(12)
+                                                        .spriteSheetFps(20);
+                long normal = lava && lavaNormals != null ? lavaNormals.getHandle() : waterNormalHandle;
+                material.normalTexture(normal);
+                int luminance = profile.fluid().getFluidType().getLightLevel();
+                if (lava)
+                    luminance = Math.max(15, luminance);
+                if (luminance > 0)
+                    material.emissiveTexture(color.getHandle()).emissiveIntensity(luminance * 5f);
+                if (lava)
+                    material.opaqueExt(MaterialInfoOpaqueEXT.builder()
+                                               .albedoConstant(1, 1, 1)
+                                               .roughnessConstant(.65f)
+                                               .useDrawCallAlphaState(true)
+                                               .alphaTestType(7)
+                                               .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA)
+                                               .build());
+                else
                     material.translucentExt(
-                                    MaterialInfoTranslucentEXT.builder()
-                                            .refractiveIndex(waterIor)
-                                            .transmittanceColor(
-                                                    average.red(), average.green(), average.blue())
-                                            .transmittanceMeasurementDistance(waterTransmittanceDistance)
-                                            .useDiffuseLayer(true)
-                                            .build())
-                            .build());
-            if (created != null) {
-                String key = "fluid:" + id;
-                buckets.put(id, key);
-                variants.put(key, created);
-                entityVariants.put(sprite.fluidEntityTexture, created);
+                            MaterialInfoTranslucentEXT.builder()
+                                    .refractiveIndex(waterIor)
+                                    .transmittanceColor(average.red() * ((tint >>> 16) & 255) / 255f,
+                                            average.green() * ((tint >>> 8) & 255) / 255f,
+                                            average.blue() * (tint & 255) / 255f)
+                                    .transmittanceMeasurementDistance(waterTransmittanceDistance)
+                                    .useDiffuseLayer(true)
+                                    .build());
+                created = createMaterialViaStore(material.build());
+                if (created == null)
+                    continue;
+                shared.put(sharedKey, created);
             }
+            Identifier entityId = Identifier.of("rtx-remix-renderer",
+                    "fluid/" + profile.id().getNamespace() + "/" + profile.id().getPath());
+            int entityLayer = LAYER_COUNT + entityIds.size();
+            typeLayers.put(profile.fluid(), entityLayer);
+            entityIds.add(entityId);
+            entityVariants.put(entityId, created);
+            typeBuckets.put(profile.fluid(), key);
+            variants.put(key, created);
+            for (Identifier sprite : new Identifier[] {profile.still(), profile.flow(), profile.overlay()})
+                if (sprite != null) {
+                    boolean nativeOwner = profile.id().getNamespace().equals(sprite.getNamespace());
+                    if (nativeOwner)
+                        buckets.put(sprite, key);
+                    else
+                        buckets.putIfAbsent(sprite, key);
+                    SpriteEntry entry = spriteById.get(sprite);
+                    if (entry != null && (entry.fluidEntityLayer < 0 || nativeOwner))
+                        entry.fluidEntityLayer = entityLayer;
+                }
         }
+        fluidEntityIds = List.copyOf(entityIds);
+        fluidTypeLayers = Map.copyOf(typeLayers);
+        fluidTypeBuckets = Map.copyOf(typeBuckets);
         entityFluidMaterials = Map.copyOf(entityVariants);
         fluidMaterials = Map.copyOf(variants);
         fluidBuckets = Map.copyOf(buckets);
     }
-
     public int fluidLayer(SpriteEntry sprite) {
-        return sprite.fluidEntityTexture != null
-                        && entityFluidMaterials.containsKey(sprite.fluidEntityTexture)
-                ? LAYER_COUNT + sprite.index
-                : -1;
+        var context = FluidCaptureContext.get();
+        if (context != null)
+            return fluidTypeLayers.getOrDefault(context, -1);
+        return sprite.fluidEntityLayer;
     }
     public Identifier fluidEntityTexture(int layer) {
-        return sprites.get(layer - LAYER_COUNT).fluidEntityTexture;
+        return fluidEntityIds.get(layer - LAYER_COUNT);
     }
     public RemixMaterial entityFluidMaterial(Identifier texture) {
         return entityFluidMaterials.get(texture);
     }
-
     public String fluidBucket(Identifier sprite) {
+        var context = FluidCaptureContext.get();
+        if (context != null) {
+            String key = fluidTypeBuckets.get(context);
+            if (key != null)
+                return key;
+        }
         return fluidBuckets.get(sprite);
     }
     public RemixMaterial fluidMaterial(String bucket) {
@@ -1195,6 +1356,14 @@ public class BlockTextureManager {
         RemixAPI api = renderer.getRemixApi();
         if (api == null) return null;
 
+        if (se.generatedSurface && se.normal == null && lt != L_GLASS) {
+            var maps = ProceduralSurfaceMaps.generate(extractRGBA(se.pixX, se.pixY, se.pixW, se.pixH),
+                    se.pixW, se.pixH, appliedProceduralNormalStrength, appliedProceduralHeightStrength);
+            se.normal = upload(api, "generated_n", maps.normal(), se.pixW, se.pixH, TextureFormat.RGBA8_UNORM,
+                    TexturePurpose.NORMAL_DX);
+            se.height = upload(api, "generated_h", maps.height(), se.pixW, se.pixH, TextureFormat.R8_UNORM,
+                    TexturePurpose.HEIGHTMAP);
+        }
         if (lt == L_TRANS) return createTransMaterial(api, se);
         if (lt == L_GLASS) return createGlassMaterial(se);
 
@@ -1213,6 +1382,10 @@ public class BlockTextureManager {
             if (se.normal != null)    mb.normalTexture(se.normal.getHandle());
         } else {
             ob.roughnessConstant(0.7f).metallicConstant(0f);
+        }
+        if (!se.hasPBR && se.generatedSurface) {
+            mb.normalTexture(se.normal.getHandle());
+            ob.heightTexture(se.height.getHandle()).displaceIn(POM_DISPLACE_IN);
         }
         if (se.hasSSS) ob.subsurfaceExt(buildSSS(se, lt == L_SOLID));
         if (se.emissive != null)
@@ -1236,12 +1409,22 @@ public class BlockTextureManager {
     private RemixMaterial createGlassMaterial(SpriteEntry se) {
         MaterialInfo.Builder mb = MaterialInfo.builder()
                 .albedoTexture(se.albedo.getHandle()).filterMode(0);
-        if (se.normal != null) mb.normalTexture(se.normal.getHandle());
+        if (!se.generatedSurface && se.normal != null)
+            mb.normalTexture(se.normal.getHandle());
+        byte[] albedo = extractRGBA(se.pixX, se.pixY, se.pixW, se.pixH),
+               transmission = new byte[albedo.length];
+        for (int i = 0; i < albedo.length; i += 4) GlassOptics.transmission(albedo, i, transmission, i);
+        RemixTexture tint = upload(renderer.getRemixApi(), "glass_" + se.index, transmission, se.pixW,
+                se.pixH, TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
         if (se.emissive != null) mb.emissiveTexture(se.emissive.getHandle()).emissiveIntensity(100.0f);
         return createMaterialViaStore(mb.translucentExt(MaterialInfoTranslucentEXT.builder()
-                .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
-                .transmittanceMeasurementDistance(0.35f)
-                .useDiffuseLayer(true).build()).build());
+                                                                .refractiveIndex(COMMON_GLASS_IOR)
+                                                                .transmittanceColor(0.97f, 0.97f, 0.97f)
+                                                                .transmittanceTexture(tint.getHandle())
+                                                                .transmittanceMeasurementDistance(0.2f)
+                                                                .useDiffuseLayer(true)
+                                                                .build())
+                                              .build());
     }
 
     private MaterialInfoOpaqueSubsurfaceEXT buildSSS(SpriteEntry se, boolean solid) {
@@ -1352,7 +1535,21 @@ public class BlockTextureManager {
         return blockLightColors.getOrDefault(block, FALLBACK_WARM_WHITE);
     }
 
+    private final Map<Block, Float> blockEmissionCoverage = new java.util.IdentityHashMap<>();
+    public float emissionCoverage(Block block) {
+        return blockEmissionCoverage.getOrDefault(block, 1f);
+    }
     void cacheLightColor(Block block, Set<Identifier> modelSprites) {
+        float coverage = 0;
+        int masked = 0;
+        for (Identifier id : modelSprites) {
+            SpriteEntry se = spriteById.get(id);
+            if (se != null && se.authoredEmissionMask) {
+                coverage += se.maskCoverage;
+                masked++;
+            }
+        }
+        blockEmissionCoverage.put(block, masked == 0 ? 1 : coverage / masked);
         blockLightColors.put(block, deriveLightColorForBlock(block, modelSprites));
     }
 
@@ -1436,7 +1633,9 @@ public class BlockTextureManager {
         managedTextures.clear();
         materials.clear(); sprites.clear(); spriteById.clear();
         spriteCells.clear();
-        blockLightColors.clear(); spriteLightColors.clear();
+        blockLightColors.clear();
+        blockEmissionCoverage.clear();
+        spriteLightColors.clear();
         Arrays.fill(atlasMaterials, null);
         Arrays.fill(atlasMaterialsSSS, null);
         atlasNormalTex = null;

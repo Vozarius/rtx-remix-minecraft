@@ -20,6 +20,7 @@ class PureClientArtifactTest {
             while (entries.hasMoreElements()) {
                 var e = entries.nextElement();
                 assertFalse(e.getName().startsWith("com/nvidia/rtxremix/content/"), e.getName());
+                assertFalse(e.getName().startsWith("data/"), e.getName());
                 if (!e.getName().endsWith(".class"))
                     continue;
                 String bytes = new String(jar.getInputStream(e).readAllBytes(), StandardCharsets.ISO_8859_1);
@@ -33,6 +34,7 @@ class PureClientArtifactTest {
         try (var jar = new ZipFile(System.getProperty("rtxremix.contentJar"))) {
             assertNull(jar.getEntry("native/"));
             assertNotNull(jar.getEntry("com/nvidia/rtxremix/content/RtxRemixContentMod.class"));
+            assertNotNull(jar.getEntry("data/minecraft/tags/block/mineable/pickaxe.json"));
             var entries = jar.entries();
             while (entries.hasMoreElements()) {
                 var e = entries.nextElement();

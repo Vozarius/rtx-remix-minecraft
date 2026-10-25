@@ -1537,7 +1537,10 @@ public class ChunkManager {
         ColumnRenderState owner = result.owner();
         return result.epoch() != epoch
                 || renderColumns.get(owner.key) != owner
-                || result.generation() != owner.generation
+                // A complete snapshot may lag a newer capture in this same live column.
+                // Keep its dirty successor queued; rejecting each lagging result starves continuously
+                // changing machinery.
+                || (result.generation() != owner.generation && owner.dirtyMask == 0)
                 || terrain.findColumn(owner.cx, owner.cz) == null
                 || (owner.frame != null && !owner.frame.rtxremix$isAlive());
     }

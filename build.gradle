@@ -218,6 +218,15 @@ dependencies {
     modCompileOnly files(createApi)
     modCompileOnly files(zipTree('reference/create-1.21.1-6.0.11.jar').matching { include 'META-INF/jarjar/Ponder-*.jar', 'META-INF/jarjar/ponder-*.jar', 'META-INF/jarjar/Registrate-*.jar' }.files)
     modCompileOnly files('reference/sodiumdynamiclights-neoforge-1.0.10-1.21.1.jar')
+    def dhApi = layout.buildDirectory.file('reference-api/distant-horizons-core-3.3.3.jar').get().asFile
+    def dhArchive = file('reference/DistantHorizons-3.3.3-1.21.1-fabric-neoforge.jar')
+    if (!dhApi.exists() || dhApi.lastModified() < dhArchive.lastModified()) {
+        dhApi.parentFile.mkdirs()
+        ant.zip(destfile: dhApi) {
+            zipfileset(src: dhArchive, includes: 'com/seibel/distanthorizons/core/**,com/seibel/distanthorizons/coreapi/**,com/seibel/distanthorizons/api/**')
+        }
+    }
+    modCompileOnly files(dhApi)
     modCompileOnly files('reference/framegen-1.4-neoforge-1.21.1.jar')
     modCompileOnly files('reference/sable-neoforge-1.21.1-2.0.5.jar')
     modCompileOnly files(zipTree('reference/sable-neoforge-1.21.1-2.0.5.jar')
@@ -521,7 +530,7 @@ def clientJarTask = tasks.register('clientJar', Zip) {
     archiveClassifier.set('client')
     archiveExtension.set('jar')
     destinationDirectory.set(layout.buildDirectory.dir('libs'))
-    from({ zipTree(remapJarTask.get().archiveFile.get().asFile) }) { exclude contentClasses }
+    from({ zipTree(remapJarTask.get().archiveFile.get().asFile) }) { exclude contentClasses, 'data/**' }
     preserveFileTimestamps = false
     reproducibleFileOrder = true
 }
@@ -532,7 +541,7 @@ def contentJarTask = tasks.register('contentJar', Zip) {
     archiveExtension.set('jar')
     destinationDirectory.set(layout.buildDirectory.dir('distributions'))
     from({ zipTree(remapJarTask.get().archiveFile.get().asFile) }) {
-        include contentClasses, 'assets/rtx-remix-renderer/**', 'data/rtx-remix-renderer/**', 'LICENSE*', 'NOTICE*'
+        include contentClasses, 'assets/rtx-remix-renderer/**', 'data/**', 'LICENSE*', 'NOTICE*'
     }
     from('src/content/resources') {
         filesMatching('META-INF/neoforge.mods.toml') { expand(version: resolvedBuildVersion) }

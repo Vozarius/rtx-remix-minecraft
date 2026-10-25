@@ -1,0 +1,341 @@
+[
+  {
+    "mask": "bitsnbobs/brass_lamp_on.png",
+    "sprite": "bits_n_bobs:block/brass_lamp_on",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/brass_lamp_on_e.png"
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_e.png"
+  },
+  {
+    "mask": "bitsnbobs/lightbulb_on.png",
+    "sprite": "bits_n_bobs:block/lightbulb_on",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/lightbulb_on_e.png"
+  },
+  {
+    "mask": "create/rose_quartz_lamp_dim.png",
+    "sprite": "create:block/rose_quartz_lamp_dim",
+    "installed": "src/main/resources/assets/create/textures/block/rose_quartz_lamp_dim_e.png"
+  },
+  {
+    "mask": "create/rose_quartz_lamp_powered.png",
+    "sprite": "create:block/rose_quartz_lamp_powered",
+    "installed": "src/main/resources/assets/create/textures/block/rose_quartz_lamp_powered_e.png"
+  },
+  {
+    "mask": "create_deco/cage_lamp_light.png",
+    "sprite": "createdeco:block/palettes/cage_lamp/light_default",
+    "installed": "src/main/resources/assets/createdeco/textures/block/palettes/cage_lamp/light_default_e.png"
+  },
+  {
+    "mask": "create_deco/cage_lamp_light.png",
+    "sprite": "createdeco:block/palettes/cage_lamp/light_green",
+    "installed": "src/main/resources/assets/createdeco/textures/block/palettes/cage_lamp/light_green_e.png"
+  },
+  {
+    "mask": "create_deco/cage_lamp_light.png",
+    "sprite": "createdeco:block/palettes/cage_lamp/light_redstone",
+    "installed": "src/main/resources/assets/createdeco/textures/block/palettes/cage_lamp/light_redstone_e.png"
+  },
+  {
+    "mask": "create_deco/cage_lamp_light.png",
+    "sprite": "createdeco:block/palettes/cage_lamp/light_soul",
+    "installed": "src/main/resources/assets/createdeco/textures/block/palettes/cage_lamp/light_soul_e.png"
+  },
+  {
+    "mask": "create_propulsion/solid_burner_front_on.png",
+    "sprite": "createpropulsion:block/solid_burner_front_on",
+    "installed": "src/main/resources/assets/createpropulsion/textures/block/solid_burner_front_on_e.png"
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_black",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_black_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_blue",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_blue_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_brown",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_brown_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_cyan",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_cyan_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_gray",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_gray_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_green",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_green_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_light_blue",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_light_blue_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_light_gray",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_light_gray_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_lime",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_lime_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_magenta",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_magenta_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_orange",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_orange_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_pink",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_pink_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_purple",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_purple_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_red",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_red_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_white",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_white_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  },
+  {
+    "mask": "bitsnbobs/headlight.png",
+    "sprite": "bits_n_bobs:block/headlight/headlight_on_yellow",
+    "installed": "src/main/resources/assets/bits_n_bobs/textures/block/headlight/headlight_on_yellow_e.png",
+    "source_region": [
+      22,
+      3,
+      8,
+      8
+    ],
+    "destination_region": [
+      0,
+      0,
+      8,
+      8
+    ]
+  }
+]

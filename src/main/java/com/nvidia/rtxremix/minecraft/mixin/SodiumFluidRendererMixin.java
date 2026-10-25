@@ -20,6 +20,22 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Pseudo
 @Mixin(value = DefaultFluidRenderer.class, remap = false)
 public abstract class SodiumFluidRendererMixin {
+    @com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod(method = "render")
+    private void rtxremix$fluidScope(net.caffeinemc.mods.sodium.client.world.LevelSlice level,
+            net.minecraft.block.BlockState state, net.minecraft.fluid.FluidState fluid, BlockPos pos,
+            BlockPos offset, TranslucentGeometryCollector collector, ChunkModelBuilder builder,
+            Material material,
+            net.caffeinemc.mods.sodium.client.model.color
+                    .ColorProvider<net.minecraft.fluid.FluidState> colors,
+            net.minecraft.client.texture.Sprite[] sprites,
+            com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
+        var previous = com.nvidia.rtxremix.minecraft.texture.FluidCaptureContext.set(fluid.getFluid());
+        try {
+            original.call(level, state, fluid, pos, offset, collector, builder, material, colors, sprites);
+        } finally {
+            com.nvidia.rtxremix.minecraft.texture.FluidCaptureContext.set(previous);
+        }
+    }
     @Shadow @Final private ChunkVertexEncoder.Vertex[] vertices;
 
     @Inject(method = "writeQuad", at = @At(value = "INVOKE", target = "Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/material/Material;isTranslucent()Z"))

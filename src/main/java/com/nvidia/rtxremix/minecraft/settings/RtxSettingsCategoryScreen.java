@@ -145,9 +145,7 @@ final class RtxSettingsCategoryScreen extends GameOptionsScreen {
 
     private boolean commitTerrainEmission() {
         BlockTextureManager textures = BlockTextureManager.get();
-        return category == SettingCategory.MATERIALS
-                && textures != null
-                && textures.commitTerrainEmissionMultiplier();
+        return category == SettingCategory.MATERIALS && textures != null && textures.commitMaterialSettings();
     }
 
     @Override

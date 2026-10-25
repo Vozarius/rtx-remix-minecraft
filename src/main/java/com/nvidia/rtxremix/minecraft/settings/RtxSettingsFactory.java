@@ -208,6 +208,22 @@ public final class RtxSettingsFactory {
                 BlockTextureManager.DEFAULT_TERRAIN_EMISSION_MULTIPLIER,
                 () -> (double) textures.getTerrainEmissionMultiplier(),
                 value -> textures.setTerrainEmissionMultiplier(value.floatValue())));
+        list.add(RtxSetting
+                         .ofFloat("materials.proceduralNormalStrength", SettingGroup.MATERIALS,
+                                 "rtxremix.setting.materials.proceduralNormalStrength",
+                                 "rtxremix.setting.materials.proceduralNormalStrength.tip", 0, 4, 1,
+                                 ()
+                                         -> (double) textures.getProceduralNormalStrength(),
+                                 v -> textures.setProceduralNormalStrength(v.floatValue()))
+                         .deferSliderApply());
+        list.add(RtxSetting
+                         .ofFloat("materials.proceduralHeightStrength", SettingGroup.MATERIALS,
+                                 "rtxremix.setting.materials.proceduralHeightStrength",
+                                 "rtxremix.setting.materials.proceduralHeightStrength.tip", 0, 1, .12,
+                                 ()
+                                         -> (double) textures.getProceduralHeightStrength(),
+                                 v -> textures.setProceduralHeightStrength(v.floatValue()))
+                         .deferSliderApply());
         RemixAPI remix = renderer.getRemixApi();
         remixBool("materials.smoothReliefMaps", SettingGroup.MATERIALS,
                 "rtxremix.setting.materials.smoothReliefMaps",

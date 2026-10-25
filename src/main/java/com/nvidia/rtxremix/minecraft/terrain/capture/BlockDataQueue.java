@@ -290,9 +290,11 @@ public final class BlockDataQueue {
         // the sole consumer, so waiting here would prevent the queue from ever
         // freeing capacity. Worker captures remain subject to both bounds.
         if (isRenderThread()) {
-            state.reservedItems.incrementAndGet();
-            state.reservedBytes.addAndGet(bytes);
-            return true;
+            if (evictIntoReservation(state, data, bytes))
+                return true;
+            state.evictedSections.add(new EvictedSection(
+                    data.sectionPos().getX(), data.sectionPos().getY(), data.sectionPos().getZ()));
+            return false;
         }
 
         // Latched once per wait: a budget change applies to producers that

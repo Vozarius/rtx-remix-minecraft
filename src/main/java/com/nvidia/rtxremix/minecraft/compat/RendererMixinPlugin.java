@@ -16,10 +16,19 @@ public final class RendererMixinPlugin implements IMixinConfigPlugin {
     @Override public String getRefMapperConfig() { return null; }
     @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         if (net.neoforged.fml.loading.FMLEnvironment.dist == net.neoforged.api.distmarker.Dist.DEDICATED_SERVER) return false;
+        if (mixinClassName.endsWith(".SlopiumSodiumScopeMixin"))
+            return present("dev/slopium/visibility/RenderBudget.class")
+                    && present(targetClassName.replace('.', '/') + ".class");
+        if (mixinClassName.endsWith(".HeadlampLifecycleMixin"))
+            return present("com/kipti/bnb/content/trinkets/light/headlamp/HeadlampBlockEntity.class");
         if (mixinClassName.endsWith(".EntityCullingVisibilityMixin")) {
             return present("dev/tr7zw/entityculling/mixin/CullableMixin.class");
         }
-        if (!mixinClassName.contains(".Sodium") && !mixinClassName.contains(".Flywheel") && !mixinClassName.contains(".Sable") && !mixinClassName.contains(".FrameGen")) return true;
+        if (!mixinClassName.contains(".Create") && !mixinClassName.contains(".Sodium")
+                && !mixinClassName.contains(".Flywheel") && !mixinClassName.contains(".Sable")
+                && !mixinClassName.contains(".FrameGen") && !mixinClassName.contains(".Distant")
+                && !mixinClassName.contains(".Slopium") && !mixinClassName.contains(".Headlamp"))
+            return true;
         return present(targetClassName.replace('.', '/') + ".class");
     }
     private static boolean present(String resource) {

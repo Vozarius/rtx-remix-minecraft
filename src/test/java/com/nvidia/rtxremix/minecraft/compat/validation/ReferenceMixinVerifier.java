@@ -17,18 +17,25 @@ public class ReferenceMixinVerifier {
   var transformer=service.transformer(); MixinExtrasBootstrap.init();
   Mixins.addConfiguration("reference-renderers.mixins.json");
   if(service.getResourceAsStream("dev/tr7zw/entityculling/mixin/CullableMixin.class")!=null) Mixins.addConfiguration("reference-culling.mixins.json");
-  String[] names={
-   "net.caffeinemc.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderMeshingTask",
-   "net.caffeinemc.mods.sodium.client.render.chunk.compile.pipeline.BlockRenderer",
-   "net.caffeinemc.mods.sodium.client.render.chunk.compile.pipeline.DefaultFluidRenderer",
-   "net.caffeinemc.mods.sodium.client.render.chunk.compile.buffers.ChunkVertexConsumer",
-   "net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildOutput",
-   "net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager",
-   "net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer",
-   "dev.engine_room.flywheel.impl.BackendManagerImpl",
-   "dev.ryanhcode.sable.sublevel.ClientSubLevel",
-   "dev.ryanhcode.sable.sublevel.render.dispatcher.VanillaSubLevelRenderDispatcher",
-   "dev.screamix.framegen.client.FrameGenRuntime", "toni.sodiumdynamiclights.SodiumDynamicLights", "top.leonx.dynlight.sodium.sable.SableDynLightSource", "net.minecraft.world.entity.Entity", "net.minecraft.world.level.block.entity.BlockEntity"};
+  String[] names = {"com.kipti.bnb.content.trinkets.light.headlamp.HeadlampBlockEntity",
+          "com.seibel.distanthorizons.core.dataObjects.render.bufferBuilding.LodBufferContainer",
+          "com.seibel.distanthorizons.core.render.RenderBufferHandler",
+          "com.seibel.distanthorizons.core.render.renderer.LodRenderer",
+          "dev.slopium.visibility.CreateWallControl", "dev.slopium.visibility.RenderBudget",
+          "net.createmod.catnip.render.FluidRenderHelper",
+          "net.createmod.catnip.render.ShadeSeparatingSuperByteBuffer",
+          "net.caffeinemc.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderMeshingTask",
+          "net.caffeinemc.mods.sodium.client.render.chunk.compile.pipeline.BlockRenderer",
+          "net.caffeinemc.mods.sodium.client.render.chunk.compile.pipeline.DefaultFluidRenderer",
+          "net.caffeinemc.mods.sodium.client.render.chunk.compile.buffers.ChunkVertexConsumer",
+          "net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildOutput",
+          "net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager",
+          "net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer",
+          "dev.engine_room.flywheel.impl.BackendManagerImpl", "dev.ryanhcode.sable.sublevel.ClientSubLevel",
+          "dev.ryanhcode.sable.sublevel.render.dispatcher.VanillaSubLevelRenderDispatcher",
+          "dev.screamix.framegen.client.FrameGenRuntime", "toni.sodiumdynamiclights.SodiumDynamicLights",
+          "top.leonx.dynlight.sodium.sable.SableDynLightSource", "net.minecraft.world.entity.Entity",
+          "net.minecraft.world.level.block.entity.BlockEntity"};
   for(String name:names){
    if(service.getResourceAsStream(name.replace('.','/')+".class")==null) {
     if(args.length==0)throw new AssertionError("Reference target missing: "+name);

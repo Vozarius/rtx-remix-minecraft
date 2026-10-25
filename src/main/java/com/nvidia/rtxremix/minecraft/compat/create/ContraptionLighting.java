@@ -38,18 +38,27 @@ public final class ContraptionLighting {
             BlockLightRuleManager.fixedCentroid(CENTER);
     private static ClientWorld activeWorld;
     private static long generation;
+    private static int mutationBudget;
+    private static final int MAX_MUTATIONS_PER_FRAME = 64;
+    private static final java.util.ArrayDeque<RemixLight> RETIRED = new java.util.ArrayDeque<>();
     private ContraptionLighting() {}
 
     private static final class Source {
         final BlockPos pos;
         int stateId = -1, luminance = -1;
+        long headlampState = Long.MIN_VALUE;
+        Lamp[] headlampSlots;
         final ArrayList<Lamp> lamps = new ArrayList<>();
         Source(BlockPos pos) {
             this.pos = pos;
         }
         void clear() {
-            for (Lamp lamp : lamps) lamp.light.destroy();
+            for (Lamp lamp : lamps)
+                if (lamp.created)
+                    RETIRED.addLast(lamp.light);
             lamps.clear();
+            headlampSlots = null;
+            headlampState = Long.MIN_VALUE;
         }
     }
     private static final class Lamp {
@@ -57,7 +66,9 @@ public final class ContraptionLighting {
         double x, y, z;
         final RemixLight light;
         final Transform previousPose = new Transform();
-        boolean positioned, definitionChanged;
+        boolean positioned, definitionChanged, created;
+        boolean enabled = true;
+        int definitionHash;
         Lamp(LightInfo local, LightInfo world, double x, double y, double z) {
             this.local = local;
             this.world = world;
@@ -65,7 +76,6 @@ public final class ContraptionLighting {
             this.y = y;
             this.z = z;
             light = new RemixLight(world, null);
-            RemixLightStore.get().create(light);
         }
     }
     private static final class Owner {
@@ -92,6 +102,11 @@ public final class ContraptionLighting {
         if (activeWorld != world) {
             clear();
             activeWorld = world;
+        }
+        mutationBudget = MAX_MUTATIONS_PER_FRAME;
+        while (mutationBudget > 0 && !RETIRED.isEmpty()) {
+            RETIRED.removeFirst().destroy();
+            mutationBudget--;
         }
         long frame = ++generation;
         double animationTick =
@@ -138,7 +153,58 @@ public final class ContraptionLighting {
             for (int sourceIndex = 0; sourceIndex < owner.sources.size(); sourceIndex++) {
                 Source source = owner.sources.get(sourceIndex);
                 var state = level.getBlockState(source.pos);
-                if (ContentSupport.present()
+                if (level.getBlockEntity(source.pos)
+                                instanceof com.nvidia.rtxremix.minecraft.compat.bits
+                                                   .HeadlampAccess headlamp) {
+                    long renderState = headlamp.rtxremix$headlampState();
+                    int stateId = net.minecraft.block.Block.getRawIdFromState(state);
+                    if (source.headlampState != renderState || source.stateId != stateId) {
+                        boolean orientationChanged = source.stateId != stateId;
+                        if (source.headlampSlots == null)
+                            source.headlampSlots = new Lamp[9];
+                        source.headlampState = renderState;
+                        source.stateId = stateId;
+                        var facing = state.get(net.minecraft.state.property.Properties.FACING);
+                        for (int slot = 0; slot < 9; slot++) {
+                            int color = (int) (renderState >>> (4 + slot * 6) & 63);
+                            Lamp lamp = source.headlampSlots[slot];
+                            if (color == 0) {
+                                if (lamp != null) {
+                                    if (lamp.created)
+                                        RETIRED.addLast(lamp.light);
+                                    source.lamps.remove(lamp);
+                                    source.headlampSlots[slot] = null;
+                                }
+                                continue;
+                            }
+                            boolean lit = com.nvidia.rtxremix.minecraft.compat.bits.HeadlampPose.lit(
+                                    renderState, slot);
+                            if (lamp == null && !lit)
+                                continue;
+                            if (lamp == null) {
+                                lamp = new Lamp(
+                                        com.nvidia.rtxremix.minecraft.compat.bits.HeadlampPose.definition(),
+                                        com.nvidia.rtxremix.minecraft.compat.bits.HeadlampPose.definition(),
+                                        0, 0, 0);
+                                source.headlampSlots[slot] = lamp;
+                                source.lamps.add(lamp);
+                            }
+                            lamp.enabled = lit;
+                            if (lamp.definitionHash != color || orientationChanged) {
+                                com.nvidia.rtxremix.minecraft.compat.bits.HeadlampPose.configure(
+                                        lamp.local, renderState, slot, facing);
+                                com.nvidia.rtxremix.minecraft.compat.bits.HeadlampPose.configure(
+                                        lamp.world, renderState, slot, facing);
+                                var point = lamp.local.diskExt.position;
+                                lamp.x = source.pos.getX() + (double) point.x;
+                                lamp.y = source.pos.getY() + (double) point.y;
+                                lamp.z = source.pos.getZ() + (double) point.z;
+                                lamp.definitionHash = color;
+                                lamp.definitionChanged = true;
+                            }
+                        }
+                    }
+                } else if (ContentSupport.present()
                         && level.getBlockEntity(source.pos) instanceof CopperBeaconBlockEntity beacon) {
                     if (!beacon.isActive() || beacon.getIntensityMultiplier() <= 0) {
                         source.clear();
@@ -154,12 +220,14 @@ public final class ContraptionLighting {
                     if (!manager.updateBeaconLightInfo(beacon, animationTick, lamp.local))
                         source.clear();
                     else {
-                        manager.updateBeaconLightInfo(beacon, animationTick, lamp.world);
+                        copyBeaconPhotometry(lamp.local, lamp.world);
                         var p = lamp.local.diskExt.position;
                         lamp.x = p.x;
                         lamp.y = p.y;
                         lamp.z = p.z;
-                        lamp.definitionChanged = true;
+                        int hash = beaconDefinitionHash(lamp.local);
+                        lamp.definitionChanged |= hash != lamp.definitionHash;
+                        lamp.definitionHash = hash;
                     }
                 } else {
                     int stateId = net.minecraft.block.Block.getRawIdFromState(state);
@@ -180,11 +248,21 @@ public final class ContraptionLighting {
                     manager.markMovingLightOwner(entity.getId());
                 for (int lampIndex = 0; lampIndex < source.lamps.size(); lampIndex++) {
                     Lamp lamp = source.lamps.get(lampIndex);
+                    if (!lamp.enabled)
+                        continue;
                     pose(ROOT_MATRIX, lamp.x, lamp.y, lamp.z, POSE);
                     if (!lamp.positioned || lamp.definitionChanged
                             || !java.util.Arrays.equals(POSE.matrix, lamp.previousPose.matrix)) {
+                        if (!lamp.created && mutationBudget == 0)
+                            continue;
+                        if (!lamp.created)
+                            mutationBudget--;
                         FrameLightTransform.apply(lamp.local, lamp.world, POSE);
-                        RemixLightStore.get().update(lamp.light, lamp.world);
+                        if (!lamp.created) {
+                            RemixLightStore.get().create(lamp.light);
+                            lamp.created = true;
+                        } else
+                            RemixLightStore.get().update(lamp.light, lamp.world);
                         System.arraycopy(POSE.matrix, 0, lamp.previousPose.matrix, 0, 12);
                         lamp.positioned = true;
                         lamp.definitionChanged = false;
@@ -203,6 +281,31 @@ public final class ContraptionLighting {
                 it.remove();
             }
         }
+    }
+    private static void copyBeaconPhotometry(LightInfo from, LightInfo to) {
+        to.radiance.x = from.radiance.x;
+        to.radiance.y = from.radiance.y;
+        to.radiance.z = from.radiance.z;
+        var a = from.diskExt;
+        var b = to.diskExt;
+        b.shaping_hasvalue = a.shaping_hasvalue;
+        b.shaping_coneAngleDegrees = a.shaping_coneAngleDegrees;
+        b.shaping_coneSoftness = a.shaping_coneSoftness;
+        b.shaping_focusExponent = a.shaping_focusExponent;
+        b.volumetricRadianceScale = a.volumetricRadianceScale;
+    }
+    private static int beaconDefinitionHash(LightInfo light) {
+        int h = Float.hashCode(light.radiance.x);
+        h = h * 31 + Float.hashCode(light.radiance.y);
+        h = h * 31 + Float.hashCode(light.radiance.z);
+        var d = light.diskExt;
+        h = h * 31 + Float.hashCode(d.direction.x);
+        h = h * 31 + Float.hashCode(d.direction.y);
+        h = h * 31 + Float.hashCode(d.direction.z);
+        h = h * 31 + Float.hashCode(d.xAxis.x);
+        h = h * 31 + Float.hashCode(d.xAxis.y);
+        h = h * 31 + Float.hashCode(d.xAxis.z);
+        return h * 31 + Float.hashCode(d.shaping_coneAngleDegrees);
     }
     private static void matrix(Transform t, Matrix4f m) {
         float[] a = t.matrix;
@@ -226,6 +329,7 @@ public final class ContraptionLighting {
     public static void clear() {
         for (Owner owner : OWNERS.values()) owner.clear();
         OWNERS.clear();
+        while (!RETIRED.isEmpty()) RETIRED.removeFirst().destroy();
         activeWorld = null;
     }
 }

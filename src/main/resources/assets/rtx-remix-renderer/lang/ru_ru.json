@@ -1,0 +1,6 @@
+{
+    "rtxremix.setting.materials.proceduralNormalStrength": "Автонормали",
+    "rtxremix.setting.materials.proceduralNormalStrength.tip": "Для текстур без авторской normal map. Применяется при закрытии страницы; 0 выключает эффект.",
+    "rtxremix.setting.materials.proceduralHeightStrength": "Авторельеф",
+    "rtxremix.setting.materials.proceduralHeightStrength.tip": "Для текстур без авторской normal map. Применяется при закрытии страницы; 0 выключает эффект."
+}

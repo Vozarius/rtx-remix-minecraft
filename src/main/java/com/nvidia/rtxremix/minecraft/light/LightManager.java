@@ -234,6 +234,7 @@ public class LightManager {
         }
 
         com.nvidia.rtxremix.minecraft.compat.MovingBlockLighting.update(world, tickDelta, this);
+        com.nvidia.rtxremix.minecraft.compat.bits.HeadlampLighting.update(world, renderer.getRemixApi());
         double beaconAnimationTick = CopperBeaconAnimationClock.sample(world, tickDelta);
         if (com.nvidia.rtxremix.minecraft.compat.ContentSupport.present()) for (CopperBeaconBlockEntity beacon : CopperBeaconBlockEntity.loaded()) {
             if (!beacon.isRemoved() && beacon.getWorld() == world) {
@@ -1253,6 +1254,7 @@ public class LightManager {
         for (RemixLight light : placedBeaconLights.values())
             if (!light.isDeleted()) light.destroy();
         com.nvidia.rtxremix.minecraft.compat.MovingBlockLighting.clear();
+        com.nvidia.rtxremix.minecraft.compat.bits.HeadlampLighting.clear();
         placedBeaconLights.clear();
         placedBeaconDefinitions.clear();
         seenPlacedBeacons.clear();

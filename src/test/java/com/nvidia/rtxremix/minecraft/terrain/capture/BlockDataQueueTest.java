@@ -311,16 +311,14 @@ class BlockDataQueueTest {
                     () -> BlockDataQueue.enqueue(data, capture));
             synchronousCapture.get(5, TimeUnit.SECONDS);
 
-            assertEquals(BlockDataQueue.maxPendingItemsForTest() + 1,
-                    BlockDataQueue.pendingCount());
-            assertEquals((BlockDataQueue.maxPendingItemsForTest() + 1L) * 128L,
-                    BlockDataQueue.pendingBytes());
+            assertEquals(BlockDataQueue.maxPendingItemsForTest(), BlockDataQueue.pendingCount());
+            assertEquals(BlockDataQueue.maxPendingItemsForTest() * 128L, BlockDataQueue.pendingBytes());
 
             List<BlockDataQueue.QueuedCapture> drained = new ArrayList<>();
             while (BlockDataQueue.pendingCount() > 0) {
                 BlockDataQueue.drain(drained);
             }
-            assertEquals(BlockDataQueue.maxPendingItemsForTest() + 1, drained.size());
+            assertEquals(BlockDataQueue.maxPendingItemsForTest(), drained.size());
             assertEquals(0, BlockDataQueue.pendingCount());
             assertEquals(0, BlockDataQueue.pendingBytes());
         } finally {

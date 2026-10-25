@@ -21,11 +21,27 @@ import java.util.LinkedHashMap;
 /** Exports the active pack's original images without overwriting an author's work. */
 final class MaterialReferenceExporter {
     private MaterialReferenceExporter() {}
+    private static final java.util.concurrent.atomic.AtomicLong REQUEST =
+            new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.ExecutorService EXPORTS =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "RTX material reference export");
+                t.setDaemon(true);
+                return t;
+            });
     static void export(
             MinecraftClient client, SpriteAtlasTexture atlas, LabPBRConverter.VariantCache variants) {
+        long request = REQUEST.incrementAndGet();
+        var catalog = BlockMaterialCatalog.get();
+        EXPORTS.execute(() -> {
+            if (request == REQUEST.get())
+                write(client, variants, catalog);
+        });
+    }
+    private static void write(
+            MinecraftClient client, LabPBRConverter.VariantCache variants, BlockMaterialCatalog catalog) {
         Path root = Path.of(System.getProperty("rtxremix.materialReferenceDirectory",
                 client.runDirectory.toPath().resolve("rtx-remix/reference/materials").toString()));
-        var catalog = BlockMaterialCatalog.get();
         var rows = new ArrayList<Object>();
         var ids = new java.util.TreeSet<Identifier>(java.util.Comparator.comparing(Identifier::toString));
         ids.addAll(catalog.luminousSprites().keySet());
@@ -83,6 +99,17 @@ final class MaterialReferenceExporter {
                 rows.add(row);
             }
             Files.createDirectories(root);
+            var fluidRows = new ArrayList<Object>();
+            for (var profile : catalog.fluidProfiles().values()) {
+                var fluidRow = new LinkedHashMap<String, Object>();
+                fluidRow.put("fluid", profile.id().toString());
+                fluidRow.put("still", profile.still() == null ? null : profile.still().toString());
+                fluidRow.put("flow", profile.flow() == null ? null : profile.flow().toString());
+                fluidRow.put("base", FluidTextureStyle.lava(profile.id().toString()) ? "lava" : "water");
+                fluidRows.add(fluidRow);
+            }
+            Files.writeString(root.resolve("registered-fluids.json"),
+                    new GsonBuilder().setPrettyPrinting().create().toJson(fluidRows));
             Files.writeString(root.resolve("catalog.json"),
                     new GsonBuilder().setPrettyPrinting().create().toJson(rows));
             LoggerFactory.getLogger(MaterialReferenceExporter.class)
