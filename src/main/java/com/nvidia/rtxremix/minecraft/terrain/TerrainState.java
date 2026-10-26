@@ -286,7 +286,10 @@ public class TerrainState {
         ChunkColumn col = getOrCreateColumn(cx, cz);
 
         SectionEntry existing = col.section(sy);
-        if (existing != null && existing.dataHash == dataHash) {
+        if (existing != null && existing.dataHash == dataHash
+                && (!(data instanceof com.nvidia.rtxremix.minecraft.terrain.capture.SectionMeshData replacement)
+                        || !(existing.data instanceof com.nvidia.rtxremix.minecraft.terrain.capture.SectionMeshData previous)
+                        || previous.sameGeometry(replacement))) {
             releaseData(data);
             return null;
         }

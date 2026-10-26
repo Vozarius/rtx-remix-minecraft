@@ -22,8 +22,8 @@ public final class DistantLodMesh {
     public RemixMeshSurface decode(DistantLodData.Page page, Cut cut, RemixMaterial material) {
         int quads = page.vertices().length / 64;
         // A rectangle minus a rectangle has at most four convex pieces.
-        vertices = DirectBufferPool.acquire(quads * 24 * HardcodedVertex.STRIDE);
-        indices = DirectBufferPool.acquire(quads * 48 * Integer.BYTES);
+        vertices = DirectBufferPool.acquire(quads * (cut == null ? 4 : 24) * HardcodedVertex.STRIDE);
+        indices = DirectBufferPool.acquire(quads * (cut == null ? 6 : 48) * Integer.BYTES);
         vertexCount = indexCount = 0;
         try {
             ByteBuffer input = ByteBuffer.wrap(page.vertices()).order(page.order());

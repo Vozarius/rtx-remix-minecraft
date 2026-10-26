@@ -148,10 +148,8 @@ public abstract class SodiumSectionManagerMixin implements SodiumTerrainAccess {
     private static void rtxremix$accepted(
             ArrayList<BuilderTaskOutput> outputs, CallbackInfoReturnable<List<BuilderTaskOutput>> cir) {
         for (var output : cir.getReturnValue()) {
-            if (output instanceof SodiumCapturedOutput captured && !captured.rtxremix$publishCapture()
-                    && output instanceof ChunkBuildOutput build) {
-                SodiumSectionCapture.publishEmpty(build);
-            }
+            if (output instanceof SodiumCapturedOutput captured)
+                captured.rtxremix$publishCapture();
         }
     }
 }

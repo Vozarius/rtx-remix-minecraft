@@ -26,6 +26,8 @@ public abstract class DistantBufferMixin implements DistantBufferAccess {
         return rtxremix$data;
     }
     public synchronized void rtxremix$setData(DistantLodData data) {
+        if (rtxremix$data != null && rtxremix$data != data)
+            rtxremix$data.closed = true;
         data.closed = rtxremix$closed;
         rtxremix$data = data;
     }

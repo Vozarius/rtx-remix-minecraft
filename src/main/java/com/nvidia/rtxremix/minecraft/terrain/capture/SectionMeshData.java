@@ -60,6 +60,7 @@ public final class SectionMeshData {
     private final List<Surface> surfaces;
     private final int cachedHash;
     private final int[] categoryHashes;
+    private final long[] categoryFingerprints;
     private final long[] categoryEstimatedMeshBytes;
     private final AtomicInteger references = new AtomicInteger(1);
 
@@ -70,7 +71,8 @@ public final class SectionMeshData {
     SectionMeshData(List<Surface> surfaces, int contentHash) {
         this.surfaces = List.copyOf(surfaces);
         this.cachedHash = contentHash;
-        this.categoryHashes = computeCategoryHashes(this.surfaces);
+        this.categoryFingerprints = new long[ChunkManager.CAT_COUNT];
+        this.categoryHashes = computeCategoryHashes(this.surfaces, categoryFingerprints);
         this.categoryEstimatedMeshBytes = estimateCategoryMeshBytes(this.surfaces);
     }
 
@@ -150,7 +152,16 @@ public final class SectionMeshData {
         return h;
     }
 
-    private static int[] computeCategoryHashes(List<Surface> surfaces) {
+    public long categoryFingerprint(int category) {
+        validateCategory(category);
+        return categoryFingerprints[category];
+    }
+
+    public boolean sameGeometry(SectionMeshData other) {
+        return java.util.Arrays.equals(categoryFingerprints, other.categoryFingerprints);
+    }
+
+    private static int[] computeCategoryHashes(List<Surface> surfaces, long[] fingerprints) {
         int[] hashes = new int[ChunkManager.CAT_COUNT];
         boolean[] present = new boolean[ChunkManager.CAT_COUNT];
         for (Surface surface : surfaces) {
@@ -160,7 +171,7 @@ public final class SectionMeshData {
                 hashes[category] = 1;
                 present[category] = true;
             }
-            hashes[category] = hashes[category] * 31 + surfaceHash(surface);
+            hashes[category] = hashes[category] * 31 + surfaceHash(surface, fingerprints);
         }
         for (int category = 0; category < hashes.length; category++) {
             if (present[category] && hashes[category] == 0) hashes[category] = 1;
@@ -169,6 +180,10 @@ public final class SectionMeshData {
     }
 
     private static int surfaceHash(Surface surface) {
+        return surfaceHash(surface, null);
+    }
+
+    private static int surfaceHash(Surface surface, long[] fingerprints) {
         int hash = surface.category;
         hash = hash * 31 + surface.bucketKey.hashCode();
         hash = hash * 31 + surface.vertexCount;
@@ -177,9 +192,26 @@ public final class SectionMeshData {
 
         ByteBuffer vertices = surface.vertexBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN);
         vertices.position(0).limit(surface.vertexCount * 64);
-        while (vertices.remaining() >= Integer.BYTES) hash = hash * 31 + vertices.getInt();
-
+        long fingerprint = mixFingerprint(0, hash);
+        while (vertices.remaining() >= Integer.BYTES) {
+            int word = vertices.getInt();
+            hash = hash * 31 + word;
+            if (fingerprints != null) fingerprint = mixFingerprint(fingerprint, word);
+        }
+        if (fingerprints != null) {
+            int category = surface.category();
+            long combined = mixFingerprint(fingerprints[category], fingerprint);
+            fingerprints[category] = combined == 0 ? 1 : combined;
+        }
         return hash;
+    }
+
+    /** Avalanche each word so changes in aligned float mantissas reach every output bit. */
+    private static long mixFingerprint(long seed, long word) {
+        long value = seed ^ (word + 0x9e3779b97f4a7c15L);
+        value = (value ^ (value >>> 30)) * 0xbf58476d1ce4e5b9L;
+        value = (value ^ (value >>> 27)) * 0x94d049bb133111ebL;
+        return value ^ (value >>> 31);
     }
 
     private static long[] estimateCategoryMeshBytes(List<Surface> surfaces) {

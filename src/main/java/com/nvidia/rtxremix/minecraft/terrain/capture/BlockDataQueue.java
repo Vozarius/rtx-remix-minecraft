@@ -8,6 +8,7 @@ import com.nvidia.rtxremix.HardcodedVertex;
 import net.minecraft.util.math.ChunkSectionPos;
 
 import java.util.List;
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -22,17 +23,16 @@ import java.util.concurrent.locks.ReentrantLock;
  * worker threads to the render thread.
  */
 public final class BlockDataQueue {
-
     private static final int DEFAULT_MAX_PENDING_ITEMS = 512;
     private static final long DEFAULT_MAX_PENDING_BYTES = 128L * 1024L * 1024L;
     private static final int DEFAULT_MAX_DRAIN_ITEMS = 32;
     private static final long DEFAULT_MAX_DRAIN_BYTES = 8L * 1024L * 1024L;
-    private static final int MAX_PENDING_ITEMS = Math.max(16,
-            Integer.getInteger("rtxremix.blockDataQueue.maxPendingItems", DEFAULT_MAX_PENDING_ITEMS));
+    private static final int MAX_PENDING_ITEMS = Math.max(
+            16, Integer.getInteger("rtxremix.blockDataQueue.maxPendingItems", DEFAULT_MAX_PENDING_ITEMS));
     private static final long MAX_PENDING_BYTES = Math.max(16L * 1024L * 1024L,
             Long.getLong("rtxremix.blockDataQueue.maxPendingBytes", DEFAULT_MAX_PENDING_BYTES));
-    private static final int MAX_DRAIN_ITEMS = Math.max(1,
-            Integer.getInteger("rtxremix.blockDataQueue.maxDrainItems", DEFAULT_MAX_DRAIN_ITEMS));
+    private static final int MAX_DRAIN_ITEMS =
+            Math.max(1, Integer.getInteger("rtxremix.blockDataQueue.maxDrainItems", DEFAULT_MAX_DRAIN_ITEMS));
     private static final long MAX_DRAIN_BYTES = Math.max(4L * 1024L * 1024L,
             Long.getLong("rtxremix.blockDataQueue.maxDrainBytes", DEFAULT_MAX_DRAIN_BYTES));
     // Total time a producer may block on a full queue before trading the
@@ -40,20 +40,21 @@ public final class BlockDataQueue {
     // chunk workers holding ChunkBuilder buffer slots; parking them
     // indefinitely halts world loading everywhere, so a wedged or outpaced
     // drain must cost a recapture, never a frozen worker pool.
-    private static final long DEFAULT_PUBLISH_WAIT_BUDGET_NS = Math.max(50_000_000L,
-            Long.getLong("rtxremix.blockDataQueue.publishWaitBudgetNs", 500_000_000L));
+    private static final long DEFAULT_PUBLISH_WAIT_BUDGET_NS =
+            Math.max(50_000_000L, Long.getLong("rtxremix.blockDataQueue.publishWaitBudgetNs", 500_000_000L));
     private static volatile long publishWaitBudgetNs = DEFAULT_PUBLISH_WAIT_BUDGET_NS;
     private static final long EVICTION_RETRY_WAIT_NS = 50_000_000L;
 
     private static final AtomicLong BACKPRESSURE_WAITS = new AtomicLong();
     private static final AtomicLong BACKPRESSURE_EVICTIONS = new AtomicLong();
+    private static final AtomicLong NEXT_CAPTURE_SEQUENCE = new AtomicLong();
     private static final AtomicLong NEXT_CHUNK_TOKEN = new AtomicLong();
     private static final AtomicLong NEXT_QUEUE_GENERATION = new AtomicLong();
     private static final AtomicReference<QueueState> STATE =
             new AtomicReference<>(new QueueState(allocateQueueGeneration()));
 
     /** World generation and chunk incarnation latched together at capture start. */
-    public record CaptureToken(long queueGeneration, long chunkToken) {}
+    public record CaptureToken(long queueGeneration, long chunkToken, long sequence) {}
 
     /** Captured data retains its identity until the render thread applies it. */
     public record QueuedCapture(SectionBlockData data, CaptureToken capture) {}
@@ -65,11 +66,23 @@ public final class BlockDataQueue {
      */
     public record EvictedSection(int x, int y, int z) {}
 
-    private record QueuedSectionData(QueuedCapture capture, long bytes) {}
+    private static final class QueuedSectionData {
+        QueuedCapture capture;
+        long bytes;
+        QueuedSectionData(QueuedCapture capture, long bytes) {
+            this.capture = capture;
+            this.bytes = bytes;
+        }
+    }
 
     private static final class QueueState {
         final long generation;
         final ConcurrentLinkedQueue<QueuedSectionData> queue = new ConcurrentLinkedQueue<>();
+        // Queue nodes keep their FIFO slot while newer snapshots replace their payload.
+        // All node/index mutations use capacityLock; capacity reservations remain atomic.
+        final HashMap<Long, QueuedSectionData> latest = new HashMap<>();
+        final ConcurrentHashMap<Long, ConcurrentHashMap<Integer, Long>> publishedSequences =
+                new ConcurrentHashMap<>();
         final ConcurrentHashMap<Long, Long> chunkTokens = new ConcurrentHashMap<>();
         final AtomicInteger reservedItems = new AtomicInteger();
         final AtomicLong reservedBytes = new AtomicLong();
@@ -80,21 +93,22 @@ public final class BlockDataQueue {
         final ReentrantLock capacityLock = new ReentrantLock();
         final Condition capacityChanged = capacityLock.newCondition();
         final AtomicInteger capacityWaiters = new AtomicInteger();
-        final ConcurrentLinkedQueue<EvictedSection> evictedSections =
-                new ConcurrentLinkedQueue<>();
+        final ConcurrentLinkedQueue<EvictedSection> evictedSections = new ConcurrentLinkedQueue<>();
 
         QueueState(long generation) {
             this.generation = generation;
         }
 
         void close() {
-            if (!closed.compareAndSet(false, true)) return;
+            if (!closed.compareAndSet(false, true))
+                return;
             signalCapacityWaiters();
             discardRetiredDataIfQuiescent();
         }
 
         void signalCapacityWaiters() {
-            if (capacityWaiters.get() == 0) return;
+            if (capacityWaiters.get() == 0)
+                return;
             capacityLock.lock();
             try {
                 capacityChanged.signalAll();
@@ -105,9 +119,14 @@ public final class BlockDataQueue {
 
         void discardRetiredDataIfQuiescent() {
             if (closed.get() && activePublishers.get() == 0) {
-                QueuedSectionData retired;
-                while ((retired = queue.poll()) != null) {
-                    releaseMeshData(retired.capture.data());
+                capacityLock.lock();
+                try {
+                    QueuedSectionData retired;
+                    while ((retired = queue.poll()) != null) releaseMeshData(retired.capture.data());
+                    latest.clear();
+                    publishedSequences.clear();
+                } finally {
+                    capacityLock.unlock();
                 }
             }
         }
@@ -119,15 +138,28 @@ public final class BlockDataQueue {
     public static CaptureToken beginCapture(int cx, int cz) {
         QueueState state = STATE.get();
         long key = packChunkKey(cx, cz);
-        long chunkToken = state.chunkTokens.computeIfAbsent(
-                key, ignored -> allocateChunkToken());
-        return new CaptureToken(state.generation, chunkToken);
+        long chunkToken = state.chunkTokens.computeIfAbsent(key, ignored -> allocateChunkToken());
+        return new CaptureToken(state.generation, chunkToken, 0);
+    }
+
+    /** Orders section snapshots by capture start rather than worker completion. */
+    public static CaptureToken beginSectionCapture(ChunkSectionPos section) {
+        CaptureToken chunk = beginCapture(section.getX(), section.getZ());
+        return new CaptureToken(
+                chunk.queueGeneration(), chunk.chunkToken(), NEXT_CAPTURE_SEQUENCE.incrementAndGet());
     }
 
     /** Invalidates captures that began before this chunk-unload event. */
     public static void markChunkUnloaded(int cx, int cz) {
         QueueState state = STATE.get();
-        state.chunkTokens.remove(packChunkKey(cx, cz));
+        state.capacityLock.lock();
+        try {
+            Long removed = state.chunkTokens.remove(packChunkKey(cx, cz));
+            if (removed != null)
+                state.publishedSequences.remove(removed);
+        } finally {
+            state.capacityLock.unlock();
+        }
         state.signalCapacityWaiters();
     }
 
@@ -145,6 +177,8 @@ public final class BlockDataQueue {
         }
 
         long bytes = estimateBytes(data);
+        if (replacePending(state, data, capture, bytes))
+            return;
         if (!acquireCapacity(state, data, capture, bytes)) {
             releaseMeshData(data);
             return;
@@ -164,11 +198,33 @@ public final class BlockDataQueue {
                 return;
             }
 
-            // Publish accounting before the queue node so the render thread can
-            // never consume an entry whose counters have not yet been charged.
-            state.pendingItems.incrementAndGet();
-            state.pendingBytes.addAndGet(bytes);
-            state.queue.add(new QueuedSectionData(new QueuedCapture(data, capture), bytes));
+            state.capacityLock.lock();
+            try {
+                if (!isCaptureCurrent(state, data, capture)) {
+                    releaseCapacity(state, bytes);
+                    releaseMeshData(data);
+                    return;
+                }
+                long key = data.sectionPos().asLong();
+                QueuedSectionData previous = state.latest.get(key);
+                if (previous != null) {
+                    releaseCapacity(state, previous.bytes);
+                    state.pendingBytes.addAndGet(bytes - previous.bytes);
+                    releaseMeshData(previous.capture.data());
+                    previous.capture = new QueuedCapture(data, capture);
+                    previous.bytes = bytes;
+                } else {
+                    QueuedSectionData node = new QueuedSectionData(new QueuedCapture(data, capture), bytes);
+                    state.pendingItems.incrementAndGet();
+                    state.pendingBytes.addAndGet(bytes);
+                    state.latest.put(key, node);
+                    state.queue.add(node);
+                }
+                recordSequence(state, data, capture);
+            } finally {
+                state.capacityLock.unlock();
+                state.signalCapacityWaiters();
+            }
         } finally {
             endPublish(state);
         }
@@ -184,33 +240,41 @@ public final class BlockDataQueue {
         int outputCount = 0;
         long bytes = 0;
         while (true) {
-            QueuedSectionData next = state.queue.peek();
-            if (next == null) {
-                break;
-            }
-            if (removedCount >= MAX_DRAIN_ITEMS
-                    || (removedCount > 0 && (bytes >= MAX_DRAIN_BYTES
-                    || next.bytes > MAX_DRAIN_BYTES - bytes))) {
-                break;
-            }
+            state.capacityLock.lock();
+            try {
+                QueuedSectionData next = state.queue.peek();
+                if (next == null) {
+                    break;
+                }
+                if (removedCount >= MAX_DRAIN_ITEMS
+                        || (removedCount > 0
+                                && (bytes >= MAX_DRAIN_BYTES || next.bytes > MAX_DRAIN_BYTES - bytes))) {
+                    break;
+                }
 
-            next = state.queue.poll();
-            if (next == null) continue;
+                next = state.queue.poll();
+                if (next == null)
+                    continue;
+                state.latest.remove(next.capture.data().sectionPos().asLong(), next);
 
-            state.pendingItems.decrementAndGet();
-            state.pendingBytes.addAndGet(-next.bytes);
-            releaseCapacity(state, next.bytes);
+                state.pendingItems.decrementAndGet();
+                state.pendingBytes.addAndGet(-next.bytes);
+                releaseCapacity(state, next.bytes);
 
-            if (isCurrent(next.capture)) {
-                out.add(next.capture);
-                outputCount++;
-            } else {
-                releaseMeshData(next.capture.data());
+                if (isCurrent(next.capture)) {
+                    out.add(next.capture);
+                    outputCount++;
+                } else {
+                    releaseMeshData(next.capture.data());
+                }
+                removedCount++;
+                bytes += next.bytes;
+            } finally {
+                state.capacityLock.unlock();
             }
-            removedCount++;
-            bytes += next.bytes;
         }
-        if (removedCount > 0) state.signalCapacityWaiters();
+        if (removedCount > 0)
+            state.signalCapacityWaiters();
         return outputCount;
     }
 
@@ -257,9 +321,9 @@ public final class BlockDataQueue {
     public static boolean isCurrent(QueuedCapture queued) {
         QueueState state = STATE.get();
         CaptureToken capture = queued.capture();
-        return state.generation == capture.queueGeneration()
-                && !state.closed.get()
-                && isCurrentChunkToken(state, queued.data(), capture.chunkToken());
+        return state.generation == capture.queueGeneration() && !state.closed.get()
+                && isCurrentChunkToken(state, queued.data(), capture.chunkToken())
+                && sequenceCurrent(state, queued.data(), capture);
     }
 
     static int trackedChunkCount() {
@@ -281,10 +345,12 @@ public final class BlockDataQueue {
         return previous;
     }
 
-    private static boolean acquireCapacity(QueueState state, SectionBlockData data,
-                                           CaptureToken capture, long bytes) {
-        if (!isCaptureCurrent(state, data, capture)) return false;
-        if (tryReserveCapacity(state, bytes)) return true;
+    private static boolean acquireCapacity(
+            QueueState state, SectionBlockData data, CaptureToken capture, long bytes) {
+        if (!isCaptureCurrent(state, data, capture))
+            return false;
+        if (tryReserveCapacity(state, bytes))
+            return true;
 
         // WorldRenderer can rebuild nearby chunks synchronously. It is also
         // the sole consumer, so waiting here would prevent the queue from ever
@@ -306,7 +372,8 @@ public final class BlockDataQueue {
             state.capacityWaiters.incrementAndGet();
             try {
                 while (isCaptureCurrent(state, data, capture)) {
-                    if (tryReserveCapacity(state, bytes)) return true;
+                    if (tryReserveCapacity(state, bytes))
+                        return true;
                     if (waitBudgetNs > 0L) {
                         waitBudgetNs = state.capacityChanged.awaitNanos(waitBudgetNs);
                         continue;
@@ -315,7 +382,8 @@ public final class BlockDataQueue {
                     // is wedged or hopelessly outpaced. Trade the oldest queued
                     // captures for liveness; FIFO order makes the head the most
                     // stale entry and exactly what the drain would consume next.
-                    if (evictIntoReservation(state, data, bytes)) return true;
+                    if (evictIntoReservation(state, data, bytes))
+                        return true;
                     // Capacity is held by reservations still in flight
                     // between reserve and enqueue; re-arm a short wait.
                     waitBudgetNs = EVICTION_RETRY_WAIT_NS;
@@ -339,10 +407,10 @@ public final class BlockDataQueue {
      * needless second eviction. Returns false once the queue runs empty, with
      * everything consumed released again.
      */
-    private static boolean evictIntoReservation(QueueState state, SectionBlockData incoming,
-                                                long bytes) {
+    private static boolean evictIntoReservation(QueueState state, SectionBlockData incoming, long bytes) {
         long held = evictQueueHead(state, incoming);
-        if (held < 0L) return false;
+        if (held < 0L)
+            return false;
 
         int foldedItems = 0;
         while (!tryReserveBytes(state, held, bytes)) {
@@ -357,7 +425,8 @@ public final class BlockDataQueue {
             foldedItems++;
             held += next;
         }
-        if (foldedItems > 0 || held > bytes) state.signalCapacityWaiters();
+        if (foldedItems > 0 || held > bytes)
+            state.signalCapacityWaiters();
         return true;
     }
 
@@ -370,25 +439,34 @@ public final class BlockDataQueue {
      * section is superseded by the capture about to be published.
      */
     private static long evictQueueHead(QueueState state, SectionBlockData incoming) {
-        QueuedSectionData head = state.queue.poll();
-        if (head == null) return -1L;
+        state.capacityLock.lock();
+        try {
+            QueuedSectionData head = state.queue.poll();
+            if (head == null)
+                return -1L;
+            state.latest.remove(head.capture.data().sectionPos().asLong(), head);
 
-        state.pendingItems.decrementAndGet();
-        state.pendingBytes.addAndGet(-head.bytes);
-        releaseMeshData(head.capture.data());
+            state.pendingItems.decrementAndGet();
+            state.pendingBytes.addAndGet(-head.bytes);
+            releaseMeshData(head.capture.data());
 
-        ChunkSectionPos sacrificed = head.capture.data().sectionPos();
-        if (isCurrent(head.capture) && !sacrificed.equals(incoming.sectionPos())) {
-            BACKPRESSURE_EVICTIONS.incrementAndGet();
-            state.evictedSections.add(new EvictedSection(
-                    sacrificed.getX(), sacrificed.getY(), sacrificed.getZ()));
+            ChunkSectionPos sacrificed = head.capture.data().sectionPos();
+            if (isCurrent(head.capture) && !sacrificed.equals(incoming.sectionPos())) {
+                BACKPRESSURE_EVICTIONS.incrementAndGet();
+                state.evictedSections.add(
+                        new EvictedSection(sacrificed.getX(), sacrificed.getY(), sacrificed.getZ()));
+            }
+            return head.bytes;
+        } finally {
+            state.capacityLock.unlock();
         }
-        return head.bytes;
     }
 
     private static boolean tryReserveCapacity(QueueState state, long bytes) {
-        if (state.closed.get() || !tryReserveItem(state)) return false;
-        if (tryReserveBytes(state, 0L, bytes)) return true;
+        if (state.closed.get() || !tryReserveItem(state))
+            return false;
+        if (tryReserveBytes(state, 0L, bytes))
+            return true;
 
         state.reservedItems.decrementAndGet();
         state.signalCapacityWaiters();
@@ -398,8 +476,10 @@ public final class BlockDataQueue {
     private static boolean tryReserveItem(QueueState state) {
         while (true) {
             int items = state.reservedItems.get();
-            if (items >= MAX_PENDING_ITEMS) return false;
-            if (state.reservedItems.compareAndSet(items, items + 1)) return true;
+            if (items >= MAX_PENDING_ITEMS)
+                return false;
+            if (state.reservedItems.compareAndSet(items, items + 1))
+                return true;
         }
     }
 
@@ -413,8 +493,10 @@ public final class BlockDataQueue {
         while (true) {
             long reserved = state.reservedBytes.get();
             long others = reserved - held;
-            if (wanted > held && others > 0 && wanted > MAX_PENDING_BYTES - others) return false;
-            if (state.reservedBytes.compareAndSet(reserved, reserved + wanted - held)) return true;
+            if (wanted > held && others > 0 && wanted > MAX_PENDING_BYTES - others)
+                return false;
+            if (state.reservedBytes.compareAndSet(reserved, reserved + wanted - held))
+                return true;
         }
     }
 
@@ -425,7 +507,8 @@ public final class BlockDataQueue {
 
     private static boolean beginPublish(QueueState state) {
         state.activePublishers.incrementAndGet();
-        if (!state.closed.get() && STATE.get() == state) return true;
+        if (!state.closed.get() && STATE.get() == state)
+            return true;
         endPublish(state);
         return false;
     }
@@ -435,12 +518,54 @@ public final class BlockDataQueue {
         state.discardRetiredDataIfQuiescent();
     }
 
-    private static boolean isCaptureCurrent(QueueState state, SectionBlockData data,
-                                            CaptureToken capture) {
-        return STATE.get() == state
-                && !state.closed.get()
-                && state.generation == capture.queueGeneration()
-                && isCurrentChunkToken(state, data, capture.chunkToken());
+    private static boolean isCaptureCurrent(QueueState state, SectionBlockData data, CaptureToken capture) {
+        return STATE.get() == state && !state.closed.get() && state.generation == capture.queueGeneration()
+                && isCurrentChunkToken(state, data, capture.chunkToken())
+                && sequenceCurrent(state, data, capture);
+    }
+
+    private static boolean replacePending(
+            QueueState state, SectionBlockData data, CaptureToken capture, long bytes) {
+        if (!beginPublish(state)) {
+            releaseMeshData(data);
+            return true;
+        }
+        try {
+            state.capacityLock.lock();
+            try {
+                if (!isCaptureCurrent(state, data, capture)) {
+                    releaseMeshData(data);
+                    return true;
+                }
+                QueuedSectionData node = state.latest.get(data.sectionPos().asLong());
+                if (node == null || !tryReserveBytes(state, node.bytes, bytes))
+                    return false;
+                state.pendingBytes.addAndGet(bytes - node.bytes);
+                releaseMeshData(node.capture.data());
+                node.capture = new QueuedCapture(data, capture);
+                node.bytes = bytes;
+                recordSequence(state, data, capture);
+                return true;
+            } finally {
+                state.capacityLock.unlock();
+                state.signalCapacityWaiters();
+            }
+        } finally {
+            endPublish(state);
+        }
+    }
+
+    private static boolean sequenceCurrent(QueueState state, SectionBlockData data, CaptureToken capture) {
+        var column = state.publishedSequences.get(capture.chunkToken());
+        Long last = column == null ? null : column.get(data.sectionPos().getY());
+        return capture.sequence() == 0 || last == null || capture.sequence() >= last;
+    }
+
+    private static void recordSequence(QueueState state, SectionBlockData data, CaptureToken capture) {
+        if (capture.sequence() != 0)
+            state.publishedSequences
+                    .computeIfAbsent(capture.chunkToken(), ignored -> new ConcurrentHashMap<>())
+                    .put(data.sectionPos().getY(), capture.sequence());
     }
 
     private static boolean isRenderThread() {
@@ -473,10 +598,10 @@ public final class BlockDataQueue {
         }
     }
 
-    private static boolean isCurrentChunkToken(QueueState state, SectionBlockData data,
-                                               long captureChunkToken) {
-        Long current = state.chunkTokens.get(packChunkKey(
-                data.sectionPos().getX(), data.sectionPos().getZ()));
+    private static boolean isCurrentChunkToken(
+            QueueState state, SectionBlockData data, long captureChunkToken) {
+        Long current =
+                state.chunkTokens.get(packChunkKey(data.sectionPos().getX(), data.sectionPos().getZ()));
         return current != null && current == captureChunkToken;
     }
 

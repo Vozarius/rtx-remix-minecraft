@@ -100,7 +100,7 @@ public class SectionBuilderMixin {
         rtxremix$captureForBuild.set(capturing);
         if (!capturing) return;
 
-        rtxremix$blockDataCaptureToken.set(BlockDataQueue.beginCapture(sectionPos.getX(), sectionPos.getZ()));
+        rtxremix$blockDataCaptureToken.set(BlockDataQueue.beginSectionCapture(sectionPos));
         rtxremix$tracyOuter.set(ProfileScope.begin("SectionBuilder"));
         rtxremix$tracyBlockLoop.set(null);
 

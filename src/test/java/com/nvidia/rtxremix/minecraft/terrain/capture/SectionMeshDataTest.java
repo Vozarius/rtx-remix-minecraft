@@ -92,6 +92,42 @@ class SectionMeshDataTest {
         assertThrows(IllegalStateException.class, data::surfaces);
     }
 
+    @Test
+    void differentOpeningsWithIdenticalOldHashesStillReplaceTerrain() {
+        var before = opening(false);
+        var after = opening(true);
+        assertEquals(before.contentHash(), after.contentHash(), "regression fixture must reproduce the old collision");
+        assertNotEquals(before.categoryFingerprint(ChunkManager.CAT_SOLID),
+                after.categoryFingerprint(ChunkManager.CAT_SOLID));
+        var terrain = new com.nvidia.rtxremix.minecraft.terrain.TerrainState(128, 0, 0);
+        try {
+            terrain.addSection(0, 0, 0, before.contentHash(), before);
+            var updated = terrain.addSection(0, 0, 0, after.contentHash(), after);
+            org.junit.jupiter.api.Assertions.assertNotNull(updated,
+                    "a changed opening must not be discarded as unchanged geometry");
+            org.junit.jupiter.api.Assertions.assertSame(after, updated.data);
+        } finally {
+            terrain.clearForRetirement();
+        }
+    }
+
+    private static SectionMeshData opening(boolean changed) {
+        var vertices = ByteBuffer.allocate(8 * HardcodedVertex.STRIDE).order(ByteOrder.LITTLE_ENDIAN);
+        int[][] ranges = changed ? new int[][] {{1, 2}, {3, 4}} : new int[][] {{1, 3}, {2, 4}};
+        for (int[] range : ranges) {
+            for (int i = 0; i < 4; i++) {
+                float x = i == 0 || i == 3 ? range[0] : range[1];
+                float y = i < 2 ? 0 : 1;
+                vertices.putFloat(x).putFloat(y).putFloat(0);
+                vertices.putFloat(0).putFloat(0).putFloat(1);
+                vertices.putFloat(0).putFloat(0).putInt(-1);
+                for (int pad = 0; pad < 7; pad++) vertices.putInt(0);
+            }
+        }
+        vertices.flip();
+        return meshData(new SectionMeshData.Surface(ChunkManager.CAT_SOLID, "solid", vertices, 8, 12, true));
+    }
+
     private static SectionMeshData meshData(SectionMeshData.Surface... surfaces) {
         return new SectionMeshData(List.of(surfaces));
     }

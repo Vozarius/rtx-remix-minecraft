@@ -27,7 +27,7 @@ public final class RendererMixinPlugin implements IMixinConfigPlugin {
         if (!mixinClassName.contains(".Create") && !mixinClassName.contains(".Sodium")
                 && !mixinClassName.contains(".Flywheel") && !mixinClassName.contains(".Sable")
                 && !mixinClassName.contains(".FrameGen") && !mixinClassName.contains(".Distant")
-                && !mixinClassName.contains(".Slopium") && !mixinClassName.contains(".Headlamp"))
+                && !mixinClassName.contains(".Copycat") && !mixinClassName.contains(".Slopium") && !mixinClassName.contains(".Headlamp"))
             return true;
         return present(targetClassName.replace('.', '/') + ".class");
     }

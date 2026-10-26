@@ -18,15 +18,33 @@ public abstract class SodiumBuildOutputMixin implements SodiumCapturedOutput {
     @Unique private SectionBlockData rtxremix$data;
     @Unique private BlockDataQueue.CaptureToken rtxremix$token;
 
+    // Empty Sodium builds skip the worker entirely. Stamp their submission here,
+    // rather than at upload, which can occur after a newer worker has started.
+    @Inject(method = "<init>", at = @At("RETURN"))
+    private void rtxremix$emptyCapture(CallbackInfo ci) {
+        var output = (ChunkBuildOutput) (Object) this;
+        if (com.nvidia.rtxremix.minecraft.RtxRemixMod.isRtxEnabled() && output.meshes.isEmpty()) {
+            var render = output.render;
+            var section = net.minecraft.util.math.ChunkSectionPos.from(
+                    render.getChunkX(), render.getChunkY(), render.getChunkZ());
+            rtxremix$setCapture(com.nvidia.rtxremix.minecraft.compat.sodium.SodiumSectionCapture.emptySection(
+                                        section.getX(), section.getY(), section.getZ()),
+                    BlockDataQueue.beginSectionCapture(section));
+        }
+    }
+
     @Override
     public void rtxremix$setCapture(SectionBlockData data, BlockDataQueue.CaptureToken token) {
+        if (rtxremix$data != null)
+            rtxremix$data.meshData().release();
         rtxremix$data = data;
         rtxremix$token = token;
     }
 
     @Override
     public boolean rtxremix$publishCapture() {
-        if (rtxremix$data == null) return false;
+        if (rtxremix$data == null)
+            return false;
         SectionBlockData data = rtxremix$data;
         rtxremix$data = null;
         BlockDataQueue.enqueue(data, rtxremix$token);

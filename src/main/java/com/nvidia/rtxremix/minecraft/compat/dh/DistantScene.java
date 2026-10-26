@@ -12,7 +12,7 @@ import java.util.*;
 
 /** Retains the active DH quadtree in Remix, with bounded mesh uploads and no per-frame geometry rebuild. */
 public final class DistantScene {
-    private static final IdentityHashMap<DistantLodData, Entry> ENTRIES = new IdentityHashMap<>();
+    private static final Map<DistantLodData.SectionKey, Entry> ENTRIES = new HashMap<>();
     private static final ArrayList<DistantLodData> SELECTED = new ArrayList<>();
     private static final PriorityQueue<Entry> PENDING =
             new PriorityQueue<>(Comparator.comparingDouble(e -> e.distanceSquared));
@@ -24,7 +24,7 @@ public final class DistantScene {
     private static long frame;
     private DistantScene() {}
     private static final class Entry {
-        final DistantLodData data;
+        DistantLodData data;
         ArrayList<RemixInstance> active = new ArrayList<>(), building = new ArrayList<>();
         long seen;
         int nextPage, clipX = Integer.MIN_VALUE, clipZ, clipRadius;
@@ -43,7 +43,7 @@ public final class DistantScene {
             SELECTED.add(data);
     }
     public static void update(ClientWorld world, Vec3d camera, int renderDistance, RemixAPI api) {
-        if (SELECTED.isEmpty() && ENTRIES.isEmpty())
+        if (SELECTED.isEmpty() && ENTRIES.isEmpty() && RETIRED.isEmpty())
             return;
         if (activeWorld != world) {
             releaseEntries(api);
@@ -56,7 +56,17 @@ public final class DistantScene {
             DistantLodData data = SELECTED.get(i);
             if (data.closed)
                 continue;
-            Entry entry = ENTRIES.computeIfAbsent(data, Entry::new);
+            var key = data.sectionKey;
+            Entry entry = ENTRIES.get(key);
+            if (entry == null) {
+                entry = new Entry(data);
+                ENTRIES.put(key, entry);
+            } else if (entry.data != data) {
+                retire(entry.building, api);
+                entry.data = data;
+                entry.nextPage = 0;
+                if (data.pages.isEmpty()) retire(entry.active, api);
+            }
             entry.seen = frame;
             int minX = (cx - radius) * 16, maxX = (cx + radius + 1) * 16, minZ = (cz - radius) * 16,
                 maxZ = (cz + radius + 1) * 16;
@@ -102,7 +112,7 @@ public final class DistantScene {
         int uploads = 0;
         while (uploads < UPLOADS && !PENDING.isEmpty()) {
             Entry entry = PENDING.remove();
-            if (entry.seen != frame || entry.data.closed || ENTRIES.get(entry.data) != entry)
+            if (entry.seen != frame || entry.data.closed)
                 continue;
             if (entry.nextPage >= entry.data.pages.size())
                 continue;

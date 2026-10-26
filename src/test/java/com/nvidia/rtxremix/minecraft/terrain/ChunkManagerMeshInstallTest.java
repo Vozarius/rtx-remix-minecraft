@@ -115,7 +115,7 @@ class ChunkManagerMeshInstallTest {
             int firstGeneration = intField(firstOwner, "generation");
             int currentEpoch = intField(manager, "epoch");
             Object firstResult = newResult(firstOwner, firstGeneration,
-                    1 << ChunkManager.CAT_SOLID, new int[ChunkManager.CAT_COUNT],
+                    1 << ChunkManager.CAT_SOLID, new long[ChunkManager.CAT_COUNT],
                     currentEpoch, 0);
             assertFalse(isStale(manager, firstResult));
 
@@ -125,7 +125,7 @@ class ChunkManagerMeshInstallTest {
             assertTrue(intField(firstOwner, "dirtyMask") != 0);
 
             Object currentFirstResult = newResult(firstOwner, intField(firstOwner, "generation"),
-                    1 << ChunkManager.CAT_CUTOUT, new int[ChunkManager.CAT_COUNT],
+                    1 << ChunkManager.CAT_CUTOUT, new long[ChunkManager.CAT_COUNT],
                     currentEpoch, 0);
             assertFalse(isStale(manager, currentFirstResult));
 
@@ -138,7 +138,7 @@ class ChunkManagerMeshInstallTest {
                     "A result must not attach to a reloaded column with the same coordinates");
 
             Object secondResult = newResult(secondOwner, intField(secondOwner, "generation"),
-                    1 << ChunkManager.CAT_TRANSLUCENT, new int[ChunkManager.CAT_COUNT],
+                    1 << ChunkManager.CAT_TRANSLUCENT, new long[ChunkManager.CAT_COUNT],
                     currentEpoch, 0);
             assertFalse(isStale(manager, secondResult));
 
@@ -155,8 +155,8 @@ class ChunkManagerMeshInstallTest {
         ChunkManager manager = new ChunkManager(null);
         try {
             Object owner = markColumnDirty(manager, 2, 5, 1 << ChunkManager.CAT_CUTOUT);
-            int[] ownerFingerprints = (int[]) field(owner, "categoryFingerprints");
-            int[] originalFingerprints = {11, 22, 33, 44};
+            long[] ownerFingerprints = (long[]) field(owner, "categoryFingerprints");
+            long[] originalFingerprints = {11, 22, 33, 44};
             System.arraycopy(originalFingerprints, 0, ownerFingerprints, 0,
                     originalFingerprints.length);
             set(owner, "dirtyMask", 0);
@@ -171,7 +171,7 @@ class ChunkManagerMeshInstallTest {
             activePages.add(newInstalledPage(replacedCutout, ChunkManager.CAT_CUTOUT, 0));
             activePages.add(newInstalledPage(translucent, ChunkManager.CAT_TRANSLUCENT, 0));
 
-            int[] resultFingerprints = {101, 202, 303, 404};
+            long[] resultFingerprints = {101, 202, 303, 404};
             long accountedBytes = 4096;
             Object result = newResult(owner, intField(owner, "generation"),
                     1 << ChunkManager.CAT_CUTOUT, resultFingerprints,
@@ -186,7 +186,7 @@ class ChunkManagerMeshInstallTest {
             assertSame(solid, pageInstance(activePages.get(0)));
             assertSame(translucent, pageInstance(activePages.get(1)));
             assertSame(replacementCutout, pageInstance(activePages.get(2)));
-            assertArrayEquals(new int[]{11, 202, 33, 44}, ownerFingerprints,
+            assertArrayEquals(new long[]{11, 202, 33, 44}, ownerFingerprints,
                     "Only categories present in the build result may advance fingerprints");
             assertTrue(booleanField(owner, "hasPublishedState"));
             assertFalse(booleanField(owner, "buildInFlight"));
@@ -212,7 +212,7 @@ class ChunkManagerMeshInstallTest {
 
             long accountedBytes = 8192;
             Object result = newResult(owner, intField(owner, "generation"), categoryMask,
-                    new int[ChunkManager.CAT_COUNT], intField(manager, "epoch"),
+                    new long[ChunkManager.CAT_COUNT], intField(manager, "epoch"),
                     accountedBytes);
             set(result, "pages", new BlockMeshBuilder.MeshPage[]{
                     new BlockMeshBuilder.MeshPage(ChunkManager.CAT_SOLID, uninstalledMesh)
@@ -278,7 +278,7 @@ class ChunkManagerMeshInstallTest {
                 long.class, int.class, int.class);
         ownerConstructor.setAccessible(true);
         Object owner = ownerConstructor.newInstance(0L, 0, 0);
-        return newResult(owner, 0, 0, new int[ChunkManager.CAT_COUNT],
+        return newResult(owner, 0, 0, new long[ChunkManager.CAT_COUNT],
                 0, accountedBytes);
     }
 
@@ -289,7 +289,7 @@ class ChunkManagerMeshInstallTest {
         set(owner, "dirtyMask", 0);
         set(owner, "buildInFlight", true);
         Object result = newResult(owner, intField(owner, "generation"),
-                1 << ChunkManager.CAT_SOLID, new int[ChunkManager.CAT_COUNT],
+                1 << ChunkManager.CAT_SOLID, new long[ChunkManager.CAT_COUNT],
                 intField(manager, "epoch"), 0);
         set(result, "pages", new BlockMeshBuilder.MeshPage[0]);
         set(result, "complete", true);
@@ -299,12 +299,12 @@ class ChunkManagerMeshInstallTest {
     }
 
     private static Object newResult(Object owner, int generation, int categoryMask,
-                                    int[] fingerprints, int epoch,
+                                    long[] fingerprints, int epoch,
                                     long accountedBytes) throws Exception {
         Class<?> resultType = nested("MeshBuildResult");
         Constructor<?> constructor = resultType.getDeclaredConstructor(
                 nested("ColumnRenderState"), int.class, int.class,
-                int[].class, int.class, long.class);
+                long[].class, int.class, long.class);
         constructor.setAccessible(true);
         return constructor.newInstance(owner, generation, categoryMask,
                 fingerprints, epoch, accountedBytes);

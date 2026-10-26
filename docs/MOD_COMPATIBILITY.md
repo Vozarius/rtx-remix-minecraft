@@ -16,6 +16,12 @@ compile-only; they are not embedded in the RTX Remix JAR.
   recaptures exclude built air sections and prioritise nearby sections. Additional
   off-camera builds yield to foreground work and stop at capture-queue high-water
   marks (64 sections or 16 MiB), with at most eight extra submissions per update.
+  The capture queue coalesces repeated section snapshots in their existing FIFO slot,
+  frees replaced buffers immediately, and rejects a late older build after a newer
+  snapshot was published. Cached 64-bit geometry fingerprints distinguish aligned
+  vertex changes that collide under the older polynomial 32-bit hash. Already displayed columns with edits take priority over
+  background first loads. Empty Sodium results are stamped when created, not at
+  upload, so clearing a section obeys the same ordering as a normal rebuild.
 - Distant Horizons 3.3.3: copy final 16-byte LOD vertices before DH releases its
   pooled buffers, then publish retained colour/alpha meshes into Remix. The
   active quadtree supplies all directions for traced shadows and reflections.
@@ -24,6 +30,10 @@ compile-only; they are not embedded in the RTX Remix JAR.
   `rtxremix.dh.pagesPerFrame` changes that budget. DH owns LOD generation, database,
   radius and detail selection. The adapter uses vertex colours, not DH 3.3.3's
   optional detail texture tiles or its GLSL fog/SSAO/shader-pack effects.
+  Only the terrain draw forwarder is cancelled: the overloaded preparation method
+  still builds the active LOD list. Revisions of the same spatial tile keep the
+  previous mesh visible until all pages of the replacement are ready. Unclipped
+  pages allocate only their actual quad/index capacity.
 - Slopium 0.1.0-alpha.18: camera/wall culling cannot suppress Create models during
   a Remix world render; distance helpers do not truncate an accepted Remix model
   capture. Client tick budgets and explicit rendering-disable options retain their
@@ -49,7 +59,10 @@ compile-only; they are not embedded in the RTX Remix JAR.
   capture path does not repeat whole-block neighbour hiding for Copycat blocks,
   which otherwise reads a multipart material without its part context. Other
   block-entity and dynamic face checks are evaluated per position, not cached
-  solely by the two block states.
+  solely by the two block states. Copycats' client-side `redraw` also invalidates
+  neighbouring sections after material or connected-texture edits, even when the
+  host block state is unchanged. Sodium classifies a copied glass surface using
+  its final sprite as well as the host state.
 - Sable 2.0.5: retain the sublevel object as the capture's coordinate-system
   identity. Mesh roots and analytic lights follow its interpolated render
   pose, including scale and rotation point. Large storage coordinates are

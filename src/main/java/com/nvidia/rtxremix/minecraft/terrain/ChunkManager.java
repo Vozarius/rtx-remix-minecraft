@@ -381,7 +381,7 @@ public class ChunkManager {
         final Transform transform = Transform.identity();
         final Transform nextTransform = Transform.identity();
         final List<InstalledMeshPage> activePages = new ArrayList<>();
-        final int[] categoryFingerprints = new int[CAT_COUNT];
+        final long[] categoryFingerprints = new long[CAT_COUNT];
         int generation;
         int dirtyMask;
         boolean buildInFlight;
@@ -403,7 +403,7 @@ public class ChunkManager {
         private final ColumnRenderState owner;
         private final int generation;
         private final int categoryMask;
-        private final int[] categoryFingerprints;
+        private final long[] categoryFingerprints;
         private final int epoch;
         private volatile BlockMeshBuilder.MeshPage[] pages;
         private volatile long accountedBytes;
@@ -411,7 +411,7 @@ public class ChunkManager {
         private volatile boolean complete;
 
         MeshBuildResult(ColumnRenderState owner, int generation, int categoryMask,
-                        int[] categoryFingerprints, int epoch, long estimatedBytes) {
+                        long[] categoryFingerprints, int epoch, long estimatedBytes) {
             this.owner = owner;
             this.generation = generation;
             this.categoryMask = categoryMask;
@@ -423,7 +423,7 @@ public class ChunkManager {
         ColumnRenderState owner() { return owner; }
         int generation() { return generation; }
         int categoryMask() { return categoryMask; }
-        int[] categoryFingerprints() { return categoryFingerprints; }
+        long[] categoryFingerprints() { return categoryFingerprints; }
         int epoch() { return epoch; }
         BlockMeshBuilder.MeshPage[] pages() { return pages; }
         long accountedBytes() { return accountedBytes; }
@@ -1185,6 +1185,7 @@ public class ChunkManager {
             }
         }
         dirtyBuildScratch.sort((left, right) -> {
+            if (left.urgentBuild != right.urgentBuild) return left.urgentBuild ? -1 : 1;
             if (left.hasPublishedState != right.hasPublishedState) {
                 return left.hasPublishedState ? 1 : -1;
             }
@@ -1201,7 +1202,7 @@ public class ChunkManager {
             if (column == null || column.isEmpty()) continue;
 
             List<TerrainState.SectionSnapshot> snapshots = terrain.createSnapshot(column);
-            int[] fingerprints = columnCategoryFingerprints(snapshots);
+            long[] fingerprints = columnCategoryFingerprints(snapshots);
             int requestedMask = state.dirtyMask;
             int buildMask = requestedMask;
             if (state.hasPublishedState) {
@@ -1618,21 +1619,21 @@ public class ChunkManager {
         SectionMeshData newData = replacement instanceof SectionMeshData data ? data : null;
         int mask = 0;
         for (int category = 0; category < CAT_COUNT; category++) {
-            int oldHash = oldData != null ? oldData.categoryContentHash(category) : 0;
-            int newHash = newData != null ? newData.categoryContentHash(category) : 0;
+            long oldHash = oldData != null ? oldData.categoryFingerprint(category) : 0;
+            long newHash = newData != null ? newData.categoryFingerprint(category) : 0;
             if (oldHash != newHash) mask |= 1 << category;
         }
         return mask;
     }
 
-    private static int[] columnCategoryFingerprints(
+    private static long[] columnCategoryFingerprints(
             List<TerrainState.SectionSnapshot> snapshots) {
-        int[] fingerprints = new int[CAT_COUNT];
+        long[] fingerprints = new long[CAT_COUNT];
         boolean[] present = new boolean[CAT_COUNT];
         for (TerrainState.SectionSnapshot snapshot : snapshots) {
             if (!(snapshot.data() instanceof SectionMeshData data)) continue;
             for (int category = 0; category < CAT_COUNT; category++) {
-                int sectionHash = data.categoryContentHash(category);
+                long sectionHash = data.categoryFingerprint(category);
                 if (sectionHash == 0) continue;
                 if (!present[category]) {
                     fingerprints[category] = 1;

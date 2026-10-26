@@ -13,6 +13,8 @@ import java.util.List;
 public final class DistantLodData {
     public static final int PAGE_BYTES = 1024 * 64;
     public record Page(byte[] vertices, ByteOrder order, boolean translucent) {}
+    public record SectionKey(int x, int y, int z, int width) {}
+    public final SectionKey sectionKey;
     public final int x, y, z, width;
     public final List<Page> pages;
     public volatile boolean closed;
@@ -22,6 +24,7 @@ public final class DistantLodData {
         this.y = y;
         this.z = z;
         this.width = width;
+        sectionKey = new SectionKey(x, y, z, width);
         var result = new ArrayList<Page>();
         copy(opaque, false, result);
         copy(translucent, true, result);

@@ -15,8 +15,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Pseudo
 @Mixin(targets = "com.seibel.distanthorizons.core.render.renderer.LodRenderer", remap = false)
 public abstract class DistantTerrainMixin {
-    @Inject(method = "renderTerrain", at = @At("HEAD"), cancellable = true)
-    private void rtxremix$replaceDraw(CallbackInfo ci) {
+    @Inject(method = "renderTerrain(Lcom/seibel/distanthorizons/core/wrapperInterfaces/render/renderPass/"
+                     + "IDhTerrainRenderer;"
+                    + "Lcom/seibel/distanthorizons/core/render/RenderBufferHandler;"
+                    + "Lcom/seibel/distanthorizons/core/render/RenderParams;Z"
+                    + "Lcom/seibel/distanthorizons/core/wrapperInterfaces/minecraft/IProfilerWrapper;)V",
+            at = @At("HEAD"), cancellable = true)
+    private void
+    rtxremix$replaceDraw(CallbackInfo ci) {
         if (RtxRemixMod.isRemixWorldRendering())
             ci.cancel();
     }

@@ -33,7 +33,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BlockDataQueueTest {
-
     /** Long enough that no wake-path test can be pre-empted by an eviction. */
     private static final long NO_EVICTION_BUDGET_NS = TimeUnit.HOURS.toNanos(1);
     private static final long PROMPT_EVICTION_BUDGET_NS = TimeUnit.MILLISECONDS.toNanos(1);
@@ -94,8 +93,7 @@ class BlockDataQueueTest {
 
         List<BlockDataQueue.QueuedCapture> drained = new ArrayList<>();
         assertEquals(1, BlockDataQueue.drain(drained));
-        assertEquals(List.of(retained),
-                drained.stream().map(BlockDataQueue.QueuedCapture::data).toList());
+        assertEquals(List.of(retained), drained.stream().map(BlockDataQueue.QueuedCapture::data).toList());
         assertEquals(0, BlockDataQueue.pendingCount());
         assertEquals(0, BlockDataQueue.pendingBytes());
     }
@@ -157,7 +155,7 @@ class BlockDataQueueTest {
     }
 
     @Test
-    void concurrentEnqueuesKeepPendingAccountingExact() throws Exception {
+    void concurrentReplacementsKeepOneQueueSlotAndExactAccounting() throws Exception {
         int producerCount = 8;
         int capturesPerProducer = 50;
         SectionBlockData data = emptyCapture(3, 1, -5);
@@ -178,7 +176,7 @@ class BlockDataQueueTest {
             start.countDown();
             for (Future<?> future : futures) future.get(5, TimeUnit.SECONDS);
 
-            int expected = producerCount * capturesPerProducer;
+            int expected = 1;
             assertEquals(expected, BlockDataQueue.pendingCount());
             assertEquals(expected * 128L, BlockDataQueue.pendingBytes());
 
@@ -196,10 +194,11 @@ class BlockDataQueueTest {
 
     @Test
     void clearWakesBackpressuredProducerWithoutPublishingOldWorldData() throws Exception {
-        SectionBlockData data = emptyCapture(9, 2, 11);
+        SectionBlockData data = emptyCapture(9, -100, 11);
         BlockDataQueue.CaptureToken capture = BlockDataQueue.beginCapture(9, 11);
         for (int i = 0; i < BlockDataQueue.maxPendingItemsForTest(); i++) {
-            BlockDataQueue.enqueue(data, capture);
+            BlockDataQueue.enqueue(
+                    emptyCapture(data.sectionPos().getX(), i, data.sectionPos().getZ()), capture);
         }
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -228,10 +227,11 @@ class BlockDataQueueTest {
     void chunkUnloadWakesBackpressuredStaleProducer() throws Exception {
         int cx = -14;
         int cz = 27;
-        SectionBlockData data = emptyCapture(cx, 3, cz);
+        SectionBlockData data = emptyCapture(cx, -100, cz);
         BlockDataQueue.CaptureToken capture = BlockDataQueue.beginCapture(cx, cz);
         for (int i = 0; i < BlockDataQueue.maxPendingItemsForTest(); i++) {
-            BlockDataQueue.enqueue(data, capture);
+            BlockDataQueue.enqueue(
+                    emptyCapture(data.sectionPos().getX(), i, data.sectionPos().getZ()), capture);
         }
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -248,8 +248,7 @@ class BlockDataQueueTest {
             blocked.get(5, TimeUnit.SECONDS);
 
             assertEquals(0, BlockDataQueue.drainBackpressureEvictions());
-            assertEquals(BlockDataQueue.maxPendingItemsForTest(),
-                    BlockDataQueue.pendingCount());
+            assertEquals(BlockDataQueue.maxPendingItemsForTest(), BlockDataQueue.pendingCount());
             List<BlockDataQueue.QueuedCapture> drained = new ArrayList<>();
             while (BlockDataQueue.pendingCount() > 0) {
                 assertEquals(0, BlockDataQueue.drain(drained));
@@ -263,10 +262,11 @@ class BlockDataQueueTest {
 
     @Test
     void interruptDoesNotLetBackpressuredProducerExceedCapacity() throws Exception {
-        SectionBlockData data = emptyCapture(6, 5, -12);
+        SectionBlockData data = emptyCapture(6, -100, -12);
         BlockDataQueue.CaptureToken capture = BlockDataQueue.beginCapture(6, -12);
         for (int i = 0; i < BlockDataQueue.maxPendingItemsForTest(); i++) {
-            BlockDataQueue.enqueue(data, capture);
+            BlockDataQueue.enqueue(
+                    emptyCapture(data.sectionPos().getX(), i, data.sectionPos().getZ()), capture);
         }
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -287,10 +287,8 @@ class BlockDataQueueTest {
             blocked.cancel(true);
             assertTrue(finished.await(5, TimeUnit.SECONDS));
             assertEquals(0, BlockDataQueue.drainBackpressureEvictions());
-            assertEquals(BlockDataQueue.maxPendingItemsForTest(),
-                    BlockDataQueue.pendingCount());
-            assertEquals(BlockDataQueue.maxPendingItemsForTest() * 128L,
-                    BlockDataQueue.pendingBytes());
+            assertEquals(BlockDataQueue.maxPendingItemsForTest(), BlockDataQueue.pendingCount());
+            assertEquals(BlockDataQueue.maxPendingItemsForTest() * 128L, BlockDataQueue.pendingBytes());
         } finally {
             executor.shutdownNow();
         }
@@ -298,17 +296,17 @@ class BlockDataQueueTest {
 
     @Test
     void fullQueueDoesNotDeadlockSynchronousRenderThreadCapture() throws Exception {
-        SectionBlockData data = emptyCapture(-4, 6, 15);
+        SectionBlockData data = emptyCapture(-4, -100, 15);
         BlockDataQueue.CaptureToken capture = BlockDataQueue.beginCapture(-4, 15);
         for (int i = 0; i < BlockDataQueue.maxPendingItemsForTest(); i++) {
-            BlockDataQueue.enqueue(data, capture);
+            BlockDataQueue.enqueue(
+                    emptyCapture(data.sectionPos().getX(), i, data.sectionPos().getZ()), capture);
         }
 
-        ExecutorService renderExecutor = Executors.newSingleThreadExecutor(
-                task -> new Thread(task, "Render thread"));
+        ExecutorService renderExecutor =
+                Executors.newSingleThreadExecutor(task -> new Thread(task, "Render thread"));
         try {
-            Future<?> synchronousCapture = renderExecutor.submit(
-                    () -> BlockDataQueue.enqueue(data, capture));
+            Future<?> synchronousCapture = renderExecutor.submit(() -> BlockDataQueue.enqueue(data, capture));
             synchronousCapture.get(5, TimeUnit.SECONDS);
 
             assertEquals(BlockDataQueue.maxPendingItemsForTest(), BlockDataQueue.pendingCount());
@@ -363,8 +361,7 @@ class BlockDataQueueTest {
         for (int i = 0; i < BlockDataQueue.maxPendingItemsForTest(); i++) {
             BlockDataQueue.enqueue(emptyCapture(cx, i, cz), capture);
         }
-        SectionBlockData incoming = emptyCapture(
-                cx, BlockDataQueue.maxPendingItemsForTest(), cz);
+        SectionBlockData incoming = emptyCapture(cx, BlockDataQueue.maxPendingItemsForTest(), cz);
 
         BlockDataQueue.setPublishWaitBudgetNsForTest(PROMPT_EVICTION_BUDGET_NS);
         BlockDataQueue.enqueue(incoming, capture);
@@ -378,8 +375,7 @@ class BlockDataQueueTest {
         List<BlockDataQueue.QueuedCapture> drained = new ArrayList<>();
         while (BlockDataQueue.pendingCount() > 0) BlockDataQueue.drain(drained);
         assertTrue(drained.stream().anyMatch(queued -> queued.data() == incoming));
-        assertFalse(drained.stream().anyMatch(
-                queued -> queued.data().sectionPos().getY() == 0));
+        assertFalse(drained.stream().anyMatch(queued -> queued.data().sectionPos().getY() == 0));
     }
 
     @Test
@@ -391,8 +387,7 @@ class BlockDataQueueTest {
             BlockDataQueue.enqueue(emptyCapture(cx, i, cz), capture);
         }
         BlockDataQueue.setPublishWaitBudgetNsForTest(PROMPT_EVICTION_BUDGET_NS);
-        BlockDataQueue.enqueue(emptyCapture(
-                cx, BlockDataQueue.maxPendingItemsForTest(), cz), capture);
+        BlockDataQueue.enqueue(emptyCapture(cx, BlockDataQueue.maxPendingItemsForTest(), cz), capture);
         assertEquals(1, BlockDataQueue.drainBackpressureEvictions());
 
         BlockDataQueue.clear();
@@ -417,8 +412,7 @@ class BlockDataQueueTest {
         assertEquals(BlockDataQueue.maxPendingItemsForTest(), BlockDataQueue.pendingCount());
         List<BlockDataQueue.QueuedCapture> drained = new ArrayList<>();
         while (BlockDataQueue.pendingCount() > 0) BlockDataQueue.drain(drained);
-        assertEquals(List.of(incoming),
-                drained.stream().map(BlockDataQueue.QueuedCapture::data).toList());
+        assertEquals(List.of(incoming), drained.stream().map(BlockDataQueue.QueuedCapture::data).toList());
     }
 
     @Test
@@ -439,10 +433,11 @@ class BlockDataQueueTest {
         assertEquals(BlockDataQueue.maxPendingItemsForTest(), BlockDataQueue.pendingCount());
         List<BlockDataQueue.QueuedCapture> drained = new ArrayList<>();
         while (BlockDataQueue.pendingCount() > 0) BlockDataQueue.drain(drained);
-        assertEquals(List.of(incoming), drained.stream()
-                .map(BlockDataQueue.QueuedCapture::data)
-                .filter(data -> data.sectionPos().getY() == 0)
-                .toList());
+        assertEquals(List.of(incoming),
+                drained.stream()
+                        .map(BlockDataQueue.QueuedCapture::data)
+                        .filter(data -> data.sectionPos().getY() == 0)
+                        .toList());
     }
 
     @Test
@@ -499,14 +494,14 @@ class BlockDataQueueTest {
         List<BlockDataQueue.EvictedSection> evicted = new ArrayList<>();
         assertEquals(2, BlockDataQueue.drainEvictedSections(evicted, 16));
         assertEquals(List.of(new BlockDataQueue.EvictedSection(2, 0, 2),
-                new BlockDataQueue.EvictedSection(2, 1, 2)), evicted);
+                             new BlockDataQueue.EvictedSection(2, 1, 2)),
+                evicted);
         assertEquals(1, BlockDataQueue.pendingCount());
         assertEquals(maxBytes / 4 * 3, BlockDataQueue.pendingBytes());
 
         List<BlockDataQueue.QueuedCapture> drained = new ArrayList<>();
         while (BlockDataQueue.pendingCount() > 0) BlockDataQueue.drain(drained);
-        assertEquals(List.of(incoming),
-                drained.stream().map(BlockDataQueue.QueuedCapture::data).toList());
+        assertEquals(List.of(incoming), drained.stream().map(BlockDataQueue.QueuedCapture::data).toList());
 
         // The extra heads' item slots went back to the pool, so a full
         // complement of captures must fit again without another eviction.
@@ -544,20 +539,84 @@ class BlockDataQueueTest {
                 "world unload releases everything still queued");
     }
 
+    @Test
+    void doorUpdatesReplaceQueuedGeometryAndLateClosedSnapshotCannotWin() {
+        var section = ChunkSectionPos.from(1, 4, 2);
+        var closed = doorCapture(false);
+        var old = BlockDataQueue.beginSectionCapture(section);
+        var open = doorCapture(true);
+        var fresh = BlockDataQueue.beginSectionCapture(section);
+        BlockDataQueue.enqueue(open, fresh);
+        BlockDataQueue.enqueue(closed, old);
+        assertThrows(IllegalStateException.class, closed.meshData()::surfaces);
+        assertEquals(1, BlockDataQueue.pendingCount());
+        var out = new ArrayList<BlockDataQueue.QueuedCapture>();
+        BlockDataQueue.drain(out);
+        assertEquals(List.of(open), out.stream().map(BlockDataQueue.QueuedCapture::data).toList());
+        open.meshData().release();
+    }
+
+    @Test
+    void queuedUpdateKeepsItsPlaceAndReleasesReplacedMeshExactlyOnce() {
+        var first = meshCapture(2, 3, 4);
+        var second = meshCapture(2, 3, 4);
+        var section = first.sectionPos();
+        BlockDataQueue.enqueue(first, BlockDataQueue.beginSectionCapture(section));
+        BlockDataQueue.enqueue(emptyCapture(2, 5, 4), BlockDataQueue.beginCapture(2, 4));
+        BlockDataQueue.enqueue(second, BlockDataQueue.beginSectionCapture(section));
+        assertThrows(IllegalStateException.class, first.meshData()::surfaces);
+        assertEquals(2, BlockDataQueue.pendingCount());
+        var out = new ArrayList<BlockDataQueue.QueuedCapture>();
+        BlockDataQueue.drain(out);
+        assertEquals(second, out.getFirst().data());
+        assertEquals(0, BlockDataQueue.pendingBytes());
+        second.meshData().release();
+    }
+
+    @Test
+    void newerPublishedDoorInvalidatesAlreadyDrainedOldDataButInFlightWorkDoesNot() {
+        var section = ChunkSectionPos.from(4, 5, 6);
+        var old = BlockDataQueue.beginSectionCapture(section);
+        BlockDataQueue.enqueue(emptyCapture(4, 5, 6), old);
+        var out = new ArrayList<BlockDataQueue.QueuedCapture>();
+        BlockDataQueue.drain(out);
+        var fresh = BlockDataQueue.beginSectionCapture(section);
+        assertTrue(BlockDataQueue.isCurrent(out.getFirst()),
+                "a build that has not finished cannot starve publication");
+        BlockDataQueue.enqueue(emptyCapture(4, 5, 6), fresh);
+        assertFalse(BlockDataQueue.isCurrent(out.getFirst()));
+        BlockDataQueue.enqueue(emptyCapture(4, 5, 6), old);
+        assertEquals(1, BlockDataQueue.pendingCount());
+    }
+
+    private static SectionBlockData doorCapture(boolean open) {
+        ByteBuffer vertices = ByteBuffer.allocate(4 * HardcodedVertex.STRIDE).order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < 4; i++) {
+            float horizontal = i < 2 ? 0 : 1;
+            float vertical = i == 0 || i == 3 ? 0 : 1;
+            int offset = i * HardcodedVertex.STRIDE;
+            vertices.putFloat(offset, open ? 3f / 16 : horizontal);
+            vertices.putFloat(offset + 4, vertical);
+            vertices.putFloat(offset + 8, open ? horizontal : 3f / 16);
+        }
+        SectionMeshData mesh = new SectionMeshData(
+                List.of(new SectionMeshData.Surface(ChunkManager.CAT_SOLID, "solid", vertices, 4, 6, true)));
+        return new SectionBlockData(ChunkSectionPos.from(1, 4, 2), mesh, List.of(), 0, 0, 0, 0, 0, 0, null);
+    }
+
     private static SectionBlockData meshCapture(int cx, int sy, int cz) {
-        ByteBuffer vertices = ByteBuffer.allocate(4 * HardcodedVertex.STRIDE)
-                .order(ByteOrder.LITTLE_ENDIAN);
-        SectionMeshData meshData = new SectionMeshData(List.of(new SectionMeshData.Surface(
-                ChunkManager.CAT_SOLID, "solid", vertices, 4, 6, true)));
+        ByteBuffer vertices = ByteBuffer.allocate(4 * HardcodedVertex.STRIDE).order(ByteOrder.LITTLE_ENDIAN);
+        SectionMeshData meshData = new SectionMeshData(
+                List.of(new SectionMeshData.Surface(ChunkManager.CAT_SOLID, "solid", vertices, 4, 6, true)));
         return new SectionBlockData(
-                ChunkSectionPos.from(cx, sy, cz), meshData, List.of(),
-                0, 0, 0, 0, 0, 0, null);
+                ChunkSectionPos.from(cx, sy, cz), meshData, List.of(), 0, 0, 0, 0, 0, 0, null);
     }
 
     private static boolean awaitBackpressure(long timeout, TimeUnit unit) {
         long deadline = System.nanoTime() + unit.toNanos(timeout);
         while (System.nanoTime() < deadline) {
-            if (BlockDataQueue.drainBackpressureWaits() > 0) return true;
+            if (BlockDataQueue.drainBackpressureWaits() > 0)
+                return true;
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
         }
         return false;
@@ -565,8 +624,7 @@ class BlockDataQueueTest {
 
     private static SectionBlockData emptyCapture(int cx, int sy, int cz) {
         return new SectionBlockData(
-                ChunkSectionPos.from(cx, sy, cz), null, List.of(),
-                0, 0, 0, 0, 0, 0, null);
+                ChunkSectionPos.from(cx, sy, cz), null, List.of(), 0, 0, 0, 0, 0, 0, null);
     }
 
     /**
@@ -575,9 +633,7 @@ class BlockDataQueueTest {
      * constant-size view, so a byte-bound queue costs no real memory.
      */
     private static SectionBlockData captureOfBytes(int cx, int sy, int cz, long bytes) {
-        return new SectionBlockData(
-                ChunkSectionPos.from(cx, sy, cz), null,
-                Collections.<LightEntry>nCopies((int) (bytes / 128) - 1, null),
-                0, 0, 0, 0, 0, 0, null);
+        return new SectionBlockData(ChunkSectionPos.from(cx, sy, cz), null,
+                Collections.<LightEntry>nCopies((int) (bytes / 128) - 1, null), 0, 0, 0, 0, 0, 0, null);
     }
 }

@@ -93,6 +93,7 @@
         "SodiumFluidRendererMixin",
         "CreateFluidRenderMixin",
         "CreateBufferMixin",
+        "CopycatUpdatesMixin",
         "SodiumFallbackConsumerMixin",
         "SodiumBuildOutputMixin",
         "SodiumSectionManagerMixin",
