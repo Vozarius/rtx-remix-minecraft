@@ -258,6 +258,29 @@ class DirectQuadWriterTest {
         assertTrue(BlockTextureManager.layerType("glass") < BlockTextureManager.LAYER_COUNT);
     }
 
+    @Test
+    void windowArtworkIsASeparateDecalWithTheOriginalUvsAndVertexColors() {
+        var writer = new DirectQuadWriter();
+        writer.beginSection();
+        writer.stageQuad(FRONT_POSITIONS, FRONT_UVS, 0, 0, 1, -1, CUTOUT_SPRITE, 0, 0, 1, 1, "glass");
+        int[] colors = {0xff334455, 0xff445566, 0xff556677, 0xff667788};
+        writer.stageVertexColors(colors);
+        writer.flushBlock(null);
+        var data = writer.buildMeshData();
+        try {
+            var base = surface(data, "glass");
+            var paint = surface(data, "glass_decal");
+            assertEquals(ChunkManager.CAT_TRANSLUCENT, base.category());
+            assertEquals(ChunkManager.CAT_OVERLAY, paint.category());
+            assertEquals(base.vertexCount(), paint.vertexCount());
+            assertEquals(-1, base.vertexBuffer().mismatch(paint.vertexBuffer()));
+            for (int i = 0; i < 4; i++) assertEquals(colors[i], paint.vertexBuffer().getInt(i * 64 + 32));
+        } finally {
+            data.release();
+            writer.releaseBuffers();
+        }
+    }
+
     private static SectionMeshData.Surface surface(SectionMeshData meshData, String bucketKey) {
         return meshData.surfaces().stream()
                 .filter(s -> bucketKey.equals(s.bucketKey()))

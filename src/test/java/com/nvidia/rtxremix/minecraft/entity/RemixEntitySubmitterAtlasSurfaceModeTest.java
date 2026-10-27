@@ -23,6 +23,16 @@ class RemixEntitySubmitterAtlasSurfaceModeTest {
     }
 
     @Test
+    void spriteAlphaOverridesTheCoarseCreateRenderLayer() {
+        assertEquals(RenderLayerUtils.SurfaceMode.TRANSLUCENT,
+                RemixEntitySubmitter.atlasSurfaceMode(BlockTextureManager.BLOCK_ATLAS_ID,
+                        RenderLayerUtils.SurfaceMode.CUTOUT, BlockTextureManager.L_TRANS));
+        assertEquals(RenderLayerUtils.SurfaceMode.CUTOUT,
+                RemixEntitySubmitter.atlasSurfaceMode(BlockTextureManager.BLOCK_ATLAS_ID,
+                        RenderLayerUtils.SurfaceMode.TRANSLUCENT, BlockTextureManager.L_CUTOUT));
+    }
+
+    @Test
     void anOrdinaryItemOnTheTranslucentItemLayerFallsBackToCutout() {
         // Minecraft draws opaque items through its translucent item layer, so a
         // captured TRANSLUCENT on the atlas is not evidence of a translucent block.

@@ -371,6 +371,11 @@ public final class DirectQuadWriter {
             bb.writeQuad(stagePos, i * 12, stageUvs, i * 8,
                          stageNx[i], stageNy[i], stageNz[i],
                          0, stageColor, i * 4, boundsMin, boundsMax);
+            if ("glass".equals(layer)) {
+                getBucket(ChunkManager.CAT_OVERLAY, "glass_decal")
+                        .writeQuad(stagePos, i * 12, stageUvs, i * 8, stageNx[i], stageNy[i], stageNz[i], 0,
+                                stageColor, i * 4, boundsMin, boundsMax);
+            }
         }
 
         Arrays.fill(stageSpriteId, 0, stageCount, null);
@@ -540,7 +545,12 @@ public final class DirectQuadWriter {
                     ? tex.getSpriteById(spriteId)
                     : null;
             stageSpriteEntry[i] = sprite;
-            if(sprite!=null && com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.get().isGlassSprite(sprite.id)) stageLayer[i]="glass";
+            if (sprite != null) {
+                stageLayer[i] = com.nvidia.rtxremix.minecraft.texture.BlockSurfaceLayer.resolve(stageLayer[i],
+                        com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.get().isGlassSprite(
+                                sprite.id),
+                        sprite.hasTransparency, sprite.hasPartialTransparency);
+            }
             boolean needsBlend = isBlendedLayer(stageLayer[i])
                     || (sprite != null && quadSamplesTransparentTexels(i, sprite));
             stageNeedsAlphaBlend[i] = needsBlend;

@@ -62,7 +62,7 @@ public class BlockTextureManager {
             InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
     /** Blend state for draw calls using the atlas translucent material, as terrain pairs its translucent pages. */
     public static final InstanceInfoBlendEXT ATLAS_TRANSLUCENT_BLEND =
-            InstanceInfoBlendEXT.textureTimesVertexColor();
+            InstanceInfoBlendEXT.textureTimesVertexColorAlphaBlend(0);
     private static final float POM_DISPLACE_IN = 0.25f;
     private static final float COMMON_GLASS_IOR = 1.52f;
     private static final float THIN_SSS_MEASUREMENT_DISTANCE = 0.75f;
@@ -73,7 +73,8 @@ public class BlockTextureManager {
     public static final float DEFAULT_TERRAIN_EMISSION_MULTIPLIER = 1.0f;
     public static final float MAX_TERRAIN_EMISSION_MULTIPLIER = 50.0f;
     private static final float BASE_TERRAIN_EMISSION_INTENSITY = 100.0f;
-    public static final int L_SOLID = 0, L_CUTOUT = 1, L_CUTOUT_MIPPED = 2, L_TRANS = 3, L_GLASS = 4, LAYER_COUNT = 5;
+    public static final int L_SOLID = 0, L_CUTOUT = 1, L_CUTOUT_MIPPED = 2, L_TRANS = 3, L_GLASS = 4,
+                            L_GLASS_DECAL = 5, LAYER_COUNT = 6;
 
     private static BlockTextureManager INSTANCE;
 
@@ -195,12 +196,13 @@ public class BlockTextureManager {
         public final Identifier id;
         public final float u0, v0, u1, v1;
         public final boolean hasTransparency;
+        public final boolean hasPartialTransparency;
         final int pixW, pixH, pixX, pixY;
         private final BitSet transparentPixels;
         RemixTexture albedo, normal, roughness, metallic, height, emissive, sss, sssAlbedo;
         public boolean hasPBR, hasSSS;
-        boolean generatedSurface, authoredEmissionMask;
-        float maskCoverage = 1;
+        boolean generatedSurface;
+        EmissionImage emissionImage;
         int fluidEntityLayer = -1;
         float[] lightColor;
 
@@ -210,8 +212,12 @@ public class BlockTextureManager {
             pixX = s.getX(); pixY = s.getY();
             SpriteContents contents = s.getContents();
             pixW = contents.getWidth(); pixH = contents.getHeight();
-            transparentPixels = scanTransparency(contents, pixW, pixH);
-            hasTransparency = transparentPixels != null && !transparentPixels.isEmpty();
+            NativeImage image = ((SpriteContentsAccessor) contents).getImage();
+            AlphaProfile alpha = image == null ? new AlphaProfile(new BitSet(), false)
+                    : AlphaProfile.scan(image.getWidth(), image.getHeight(), pixW, pixH, image::getColor);
+            transparentPixels = alpha.transparent();
+            hasTransparency = !transparentPixels.isEmpty();
+            hasPartialTransparency = alpha.fractional();
         }
 
         /**
@@ -240,19 +246,6 @@ public class BlockTextureManager {
                 if (transparent >= 0 && transparent <= rowEnd) return true;
             }
             return false;
-        }
-
-        private static BitSet scanTransparency(SpriteContents contents, int w, int h) {
-            NativeImage img = ((SpriteContentsAccessor) contents).getImage();
-            if (img == null) return null;
-            BitSet transparent = null;
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                    if (((img.getColor(x, y) >> 24) & 0xFF) < 255) {
-                        if (transparent == null) transparent = new BitSet(w * h);
-                        transparent.set(y * w + x);
-                    }
-            return transparent;
         }
 
         private static int uvToMinTexel(float uv, float spriteMin, float spriteMax, int size) {
@@ -360,19 +353,13 @@ public class BlockTextureManager {
                 }
                 if (eI != null) {
                     byte[] emission = EmissionMask.apply(alb, se.pixW, se.pixH, eI);
+                    EmissionTint.apply(se.id, emission, se.pixW, 0, 0, se.pixW, se.pixH);
                     se.emissive = upload(api, "s" + se.index + "_mask", emission, se.pixW, se.pixH,
                             TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
                     se.lightColor = computeLightColor(alb, emission, se.pixW, se.pixH);
+                    se.emissionImage = new EmissionImage(alb, emission, se.pixW, se.pixH);
                 }
                 se.generatedSurface = nI == null;
-                if (eI != null) {
-                    se.authoredEmissionMask = true;
-                    float coverage = 0;
-                    for (int y = 0; y < eI.getHeight(); y++)
-                        for (int x = 0; x < eI.getWidth(); x++)
-                            coverage += EmissionMask.strength(eI.getColor(x, y));
-                    se.maskCoverage = coverage / (eI.getWidth() * eI.getHeight());
-                }
                 if (se.emissive != null) emissiveCount++;
                 if (se.lightColor != null) {
                     spriteLightColors.put(e.getKey().toString(), se.lightColor);
@@ -547,6 +534,7 @@ public class BlockTextureManager {
                             se.pixX, se.pixY, se.pixW, se.pixH, BuiltinEmission.mask(se.id));
                     hasAnyEmissive = true;
                 }
+                EmissionTint.apply(se.id, emissiveAtlas, atlasW, se.pixX, se.pixY, se.pixW, se.pixH);
             } finally {
                 if (nI != null) nI.close();
                 if (sI != null) sI.close();
@@ -593,7 +581,7 @@ public class BlockTextureManager {
         atlasSssAlbedoTex = sssAlbedoTex;
 
         for (int lt = 0; lt < LAYER_COUNT; lt++) {
-            if (lt == L_TRANS) {
+            if (lt == L_TRANS || lt == L_GLASS_DECAL) {
                 atlasMaterials[lt] = createAtlasTransMaterial(emissiveTex, normalTex);
             } else if (lt == L_GLASS) {
                 atlasMaterials[lt] = createAtlasGlassMaterial(emissiveTex, normalTex);
@@ -741,30 +729,23 @@ public class BlockTextureManager {
                 .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA).build()).build();
     }
 
-    /**
-     * Clear glass. Vanilla's glass texture is alpha 0 between its frame pixels, with
-     * mid-grey RGB there, so the stained-glass material (transmittance from the
-     * albedo) would make it grey. Here the glass itself is a constant near-clear
-     * transmission and the albedo rides on top as a diffuse layer blended by its
-     * alpha, which draws the frame and streaks opaque and leaves the rest to refract.
-     */
+    /** The dielectric carries only transmission; the original artwork is a separate alpha decal. */
     private RemixMaterial createAtlasGlassMaterial(RemixTexture emissiveTex, RemixTexture normalTex) {
-        MaterialInfo.Builder mb = MaterialInfo.builder()
-                .albedoTexture(atlasAlbedo.getHandle()).filterMode(0);
+        return createMaterialViaStore(buildAtlasGlassMaterialInfo(normalTex));
+    }
+
+    MaterialInfo buildAtlasGlassMaterialInfo(RemixTexture normalTex) {
+        MaterialInfo.Builder mb = MaterialInfo.builder().filterMode(0);
         if (normalTex != null) mb.normalTexture(normalTex.getHandle());
-        if (emissiveTex != null) {
-            mb.emissiveTexture(emissiveTex.getHandle())
-                    .emissiveIntensity(terrainEmissionIntensity());
-        }
-        return createMaterialViaStore(
-                mb.translucentExt(MaterialInfoTranslucentEXT.builder()
-                                          .refractiveIndex(COMMON_GLASS_IOR)
-                                          .transmittanceColor(0.97f, 0.97f, 0.97f)
-                                          .transmittanceTexture(glassTransmissionAtlas.getHandle())
-                                          .transmittanceMeasurementDistance(0.2f)
-                                          .useDiffuseLayer(true)
-                                          .build())
-                        .build());
+        return mb
+                .translucentExt(MaterialInfoTranslucentEXT.builder()
+                                        .refractiveIndex(COMMON_GLASS_IOR)
+                                        .transmittanceColor(0.97f, 0.97f, 0.97f)
+                                        .transmittanceTexture(glassTransmissionAtlas.getHandle())
+                                        .transmittanceMeasurementDistance(0.2f)
+                                        .useDiffuseLayer(false)
+                                        .build())
+                .build();
     }
 
     // ====================================================================
@@ -1270,8 +1251,10 @@ public class BlockTextureManager {
         if (needsEmissive) {
             byte[] ed = new byte[w * h * 4];
             LabPBRConverter.blitEmissive(ed, w, alb, sI, 0, 0, w, h, 0f);
+            EmissionTint.apply(se.id, ed, w, 0, 0, w, h);
             se.emissive = upload(api, p + "e", ed, w, h, TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
             se.lightColor = computeLightColor(alb, ed, w, h);
+            se.emissionImage = new EmissionImage(alb, ed, w, h);
         }
     }
 
@@ -1364,7 +1347,8 @@ public class BlockTextureManager {
             se.height = upload(api, "generated_h", maps.height(), se.pixW, se.pixH, TextureFormat.R8_UNORM,
                     TexturePurpose.HEIGHTMAP);
         }
-        if (lt == L_TRANS) return createTransMaterial(api, se);
+        if (lt == L_TRANS || lt == L_GLASS_DECAL)
+            return createTransMaterial(api, se);
         if (lt == L_GLASS) return createGlassMaterial(se);
 
         MaterialInfoOpaqueEXT.Builder ob = MaterialInfoOpaqueEXT.builder()
@@ -1405,10 +1389,9 @@ public class BlockTextureManager {
                 .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA).build()).build());
     }
 
-    /** Per-sprite form of {@link #createAtlasGlassMaterial}: clear transmission with the sprite as a diffuse layer. */
+    /** Per-sprite dielectric; its artwork is submitted separately with the ordinary alpha material. */
     private RemixMaterial createGlassMaterial(SpriteEntry se) {
-        MaterialInfo.Builder mb = MaterialInfo.builder()
-                .albedoTexture(se.albedo.getHandle()).filterMode(0);
+        MaterialInfo.Builder mb = MaterialInfo.builder().filterMode(0);
         if (!se.generatedSurface && se.normal != null)
             mb.normalTexture(se.normal.getHandle());
         byte[] albedo = extractRGBA(se.pixX, se.pixY, se.pixW, se.pixH),
@@ -1416,13 +1399,12 @@ public class BlockTextureManager {
         for (int i = 0; i < albedo.length; i += 4) GlassOptics.transmission(albedo, i, transmission, i);
         RemixTexture tint = upload(renderer.getRemixApi(), "glass_" + se.index, transmission, se.pixW,
                 se.pixH, TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
-        if (se.emissive != null) mb.emissiveTexture(se.emissive.getHandle()).emissiveIntensity(100.0f);
         return createMaterialViaStore(mb.translucentExt(MaterialInfoTranslucentEXT.builder()
                                                                 .refractiveIndex(COMMON_GLASS_IOR)
                                                                 .transmittanceColor(0.97f, 0.97f, 0.97f)
                                                                 .transmittanceTexture(tint.getHandle())
                                                                 .transmittanceMeasurementDistance(0.2f)
-                                                                .useDiffuseLayer(true)
+                                                                .useDiffuseLayer(false)
                                                                 .build())
                                               .build());
     }
@@ -1456,6 +1438,7 @@ public class BlockTextureManager {
             case "cutout_mipped" -> L_CUTOUT_MIPPED;
             case "translucent" -> L_TRANS;
             case "glass" -> L_GLASS;
+            case "glass_decal" -> L_GLASS_DECAL;
             default -> L_SOLID;
         };
     }
@@ -1512,14 +1495,18 @@ public class BlockTextureManager {
      * Dark pixels (torch stick) contribute almost nothing; bright pixels (flame) dominate.
      */
     static float[] computeLightColor(byte[] rgba, byte[] emissiveRGBA, int w, int h) {
-        byte[] src = (emissiveRGBA != null) ? emissiveRGBA : rgba;
-        double rSum = 0, gSum = 0, bSum = 0, wSum = 0;
-        for (int i = 0; i < w * h; i++) {
-            float r = (src[i * 4] & 0xFF) / 255f;
-            float g = (src[i * 4 + 1] & 0xFF) / 255f;
-            float b = (src[i * 4 + 2] & 0xFF) / 255f;
-            float lum = (r + g + b)/3.0f;
-            rSum += r * lum; gSum += g * lum; bSum += b * lum; wSum += lum;
+        byte[] src = (emissiveRGBA != null) ? emissiveRGBA :
+                rgba;
+                double rSum = 0, gSum = 0, bSum = 0, wSum = 0;
+                for (int i = 0; i < w * h; i++) {
+                    float r = (src[i * 4] & 0xFF) / 255f;
+                    float g = (src[i * 4 + 1] & 0xFF) / 255f;
+                    float b = (src[i * 4 + 2] & 0xFF) / 255f;
+                    float lum = (r + g + b) / 3.0f;
+                    rSum += r * lum;
+                    gSum += g * lum;
+                    bSum += b * lum;
+                    wSum += lum;
         }
         if (wSum < 0.001) return FALLBACK_WARM_WHITE;
         return new float[]{(float) (rSum / wSum), (float) (gSum / wSum), (float) (bSum / wSum)};
@@ -1535,21 +1522,56 @@ public class BlockTextureManager {
         return blockLightColors.getOrDefault(block, FALLBACK_WARM_WHITE);
     }
 
-    private final Map<Block, Float> blockEmissionCoverage = new java.util.IdentityHashMap<>();
-    public float emissionCoverage(Block block) {
-        return blockEmissionCoverage.getOrDefault(block, 1f);
-    }
-    void cacheLightColor(Block block, Set<Identifier> modelSprites) {
-        float coverage = 0;
-        int masked = 0;
-        for (Identifier id : modelSprites) {
-            SpriteEntry se = spriteById.get(id);
-            if (se != null && se.authoredEmissionMask) {
-                coverage += se.maskCoverage;
-                masked++;
+    /** Only the UV regions actually used by a state's baked faces can create its automatic lights. */
+    final class ModelEmission {
+        private boolean authored, warmBulb;
+        private float strength, r, g, b;
+
+        void add(net.minecraft.client.render.model.BakedQuad quad) {
+            SpriteEntry sprite = spriteById.get(quad.getSprite().getContents().getId());
+            if (sprite == null || sprite.emissionImage == null)
+                return;
+            authored = true;
+            int[] vertices = quad.getVertexData();
+            float minU = Float.POSITIVE_INFINITY, minV = Float.POSITIVE_INFINITY;
+            float maxU = Float.NEGATIVE_INFINITY, maxV = Float.NEGATIVE_INFINITY;
+            for (int v = 0; v < 4; v++) {
+                float u = (Float.intBitsToFloat(vertices[v * 8 + 4]) - sprite.u0) / (sprite.u1 - sprite.u0);
+                float vv = (Float.intBitsToFloat(vertices[v * 8 + 5]) - sprite.v0) / (sprite.v1 - sprite.v0);
+                minU = Math.min(minU, u);
+                maxU = Math.max(maxU, u);
+                minV = Math.min(minV, vv);
+                maxV = Math.max(maxV, vv);
             }
+            EmissionProfile sample = sprite.emissionImage.sample(minU, minV, maxU, maxV);
+            strength = Math.max(strength, sample.strength());
+            if (sample.strength() <= 0)
+                return;
+            warmBulb |= sprite.id.equals(EmissionTint.LIGHTBULB_ON);
+            r = Math.max(r, sample.color().r());
+            g = Math.max(g, sample.color().g());
+            b = Math.max(b, sample.color().b());
         }
-        blockEmissionCoverage.put(block, masked == 0 ? 1 : coverage / masked);
+
+        EmissionProfile build() {
+            if (!authored)
+                return null;
+            if (warmBulb) {
+                float[] warm = EmissionTint.lightbulbColor();
+                r = warm[0];
+                g = warm[1];
+                b = warm[2];
+            }
+            return new EmissionProfile(
+                    strength, com.nvidia.rtxremix.minecraft.light.LightEntry.ColorOverride.of(r, g, b));
+        }
+    }
+
+    ModelEmission modelEmission() {
+        return new ModelEmission();
+    }
+
+    void cacheLightColor(Block block, Set<Identifier> modelSprites) {
         blockLightColors.put(block, deriveLightColorForBlock(block, modelSprites));
     }
 
@@ -1557,6 +1579,8 @@ public class BlockTextureManager {
         Identifier id = Registries.BLOCK.getId(block);
         String path = id.getPath();
 
+        if (modelSprites.contains(EmissionTint.LIGHTBULB_ON))
+            return EmissionTint.lightbulbColor();
         float[] known = KNOWN_LIGHT_COLORS.get(path);
         if (known != null) return known;
 
@@ -1634,7 +1658,6 @@ public class BlockTextureManager {
         materials.clear(); sprites.clear(); spriteById.clear();
         spriteCells.clear();
         blockLightColors.clear();
-        blockEmissionCoverage.clear();
         spriteLightColors.clear();
         Arrays.fill(atlasMaterials, null);
         Arrays.fill(atlasMaterialsSSS, null);

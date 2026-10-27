@@ -35,6 +35,7 @@ public final class BlockMaterialCatalog {
             TagKey.of(RegistryKeys.BLOCK, Identifier.of("c", "glass_panes"));
     private static volatile BlockMaterialCatalog active = new BlockMaterialCatalog();
     private final Map<BlockState, Set<Identifier>> stateSprites = new IdentityHashMap<>();
+    private final Map<BlockState, EmissionProfile> emission = new IdentityHashMap<>();
     private final Map<Block, Set<Identifier>> blockSprites = new IdentityHashMap<>();
     private final Map<Identifier, Set<Identifier>> luminousSprites = new HashMap<>();
     private final Set<Block> glassBlocks = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -56,6 +57,7 @@ public final class BlockMaterialCatalog {
     public static void rebuild(MinecraftClient client, BlockTextureManager textures) {
         BlockMaterialCatalog next = new BlockMaterialCatalog();
         Random random = Random.create(42);
+        GlassSpriteUsage glassUsage = new GlassSpriteUsage();
         for (Block block : Registries.BLOCK) {
             Set<Identifier> allSprites = new HashSet<>();
             boolean glass = glass(block.getDefaultState());
@@ -64,33 +66,42 @@ public final class BlockMaterialCatalog {
             for (BlockState state : block.getStateManager().getStates()) {
                 BakedModel model = client.getBlockRenderManager().getModel(state);
                 Set<Identifier> ids = new HashSet<>();
-                ids.add(model.getParticleSprite().getContents().getId());
-                collect(model, state, null, random, ids);
-                for (Direction side : Direction.values()) collect(model, state, side, random, ids);
+                var modelEmission = textures.modelEmission();
+                collect(model, state, null, random, ids, modelEmission);
+                for (Direction side : Direction.values())
+                    collect(model, state, side, random, ids, modelEmission);
                 ids.remove(Identifier.ofVanilla("missingno"));
                 next.stateSprites.put(state, Set.copyOf(ids));
                 allSprites.addAll(ids);
-                if (state.getLuminance() > 0) {
+                EmissionProfile profile = modelEmission.build();
+                if (profile != null)
+                    next.emission.put(state, profile);
+                if (state.getLuminance() > 0 || (profile != null && profile.strength() > 0)) {
                     next.potentialEmitters.add(block);
                     for (Identifier id : ids)
                         next.luminousSprites.computeIfAbsent(id, k -> new HashSet<>())
                                 .add(Registries.BLOCK.getId(block));
                 }
             }
+            allSprites.add(client.getBlockRenderManager()
+                                   .getModel(block.getDefaultState())
+                                   .getParticleSprite()
+                                   .getContents()
+                                   .getId());
             next.blockSprites.put(block, Set.copyOf(allSprites));
             textures.cacheLightColor(block, allSprites);
-            if (glass)
-                next.glassSprites.addAll(allSprites);
+            glassUsage.add(glass, allSprites);
         }
         var atlas = (net.minecraft.client.texture.SpriteAtlasTexture) client.getTextureManager().getTexture(
                 BlockTextureManager.BLOCK_ATLAS_ID);
         for (Identifier id :
                 ((com.nvidia.rtxremix.minecraft.mixin.SpriteAtlasAccessor) atlas).getSprites().keySet()) {
-            if (id.getPath().endsWith("_connected")
-                    && next.glassSprites.contains(Identifier.of(
-                            id.getNamespace(), id.getPath().substring(0, id.getPath().length() - 10))))
-                next.glassSprites.add(id);
+            glassUsage.addSprite(id);
         }
+        next.glassSprites.addAll(glassUsage.resolve(id -> {
+            var entry = textures.getSpriteById(id);
+            return entry != null && entry.hasTransparency;
+        }));
         for (Fluid fluid : Registries.FLUID) {
             if (fluid == Fluids.EMPTY)
                 continue;
@@ -109,10 +120,13 @@ public final class BlockMaterialCatalog {
         active = next;
     }
 
-    private static void collect(
-            BakedModel model, BlockState state, Direction side, Random random, Set<Identifier> ids) {
+    private static void collect(BakedModel model, BlockState state, Direction side, Random random,
+            Set<Identifier> ids, BlockTextureManager.ModelEmission emission) {
         random.setSeed(42);
-        for (var quad : model.getQuads(state, side, random)) ids.add(quad.getSprite().getContents().getId());
+        for (var quad : model.getQuads(state, side, random)) {
+            ids.add(quad.getSprite().getContents().getId());
+            emission.add(quad);
+        }
     }
 
     public static boolean glass(BlockState state) {
@@ -125,6 +139,9 @@ public final class BlockMaterialCatalog {
     }
     public Fluid fluid(Identifier sprite) {
         return fluidSprites.get(sprite);
+    }
+    public EmissionProfile emission(BlockState state) {
+        return emission.get(state);
     }
     public boolean canEmit(Block block) {
         return potentialEmitters.contains(block);

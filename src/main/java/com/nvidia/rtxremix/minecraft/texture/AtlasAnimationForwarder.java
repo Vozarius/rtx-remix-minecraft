@@ -400,6 +400,7 @@ public final class AtlasAnimationForwarder {
                         p.width, p.height, builtinMask);
                 }
 
+                EmissionTint.apply(p.id, scratch, p.width, 0, 0, p.width, p.height);
                 ByteBuffer emissiveDst = DirectBufferPool.acquire(patchBytes);
                 emissiveDst.put(scratch, 0, patchBytes);
                 emissiveDst.flip();

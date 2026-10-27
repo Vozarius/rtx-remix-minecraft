@@ -1893,7 +1893,7 @@ public class ChunkManager {
     private static InstanceInfoBlendEXT blendExtForCategory(int cat) {
         return switch (cat) {
             case CAT_CUTOUT   -> InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
-            case CAT_OVERLAY  -> InstanceInfoBlendEXT.textureTimesVertexColorAlphaBlend(1);
+            case CAT_OVERLAY, CAT_TRANSLUCENT -> BlockTextureManager.ATLAS_TRANSLUCENT_BLEND;
             default           -> InstanceInfoBlendEXT.textureTimesVertexColor();
         };
     }

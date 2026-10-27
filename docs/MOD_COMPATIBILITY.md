@@ -213,16 +213,33 @@ texture reload. The catalog classifies glass and light-emitting models together 
 registered FluidType sprite pairs. Unauthored luminous states receive six outward-facing area
 lights, while explicit light rules retain priority. Surface emission is authored separately:
 resource packs can supply `<sprite>_e.png`, with RGB brightness times alpha as an albedo emission
-mask. Automatic fallback lights also scale by mean authored mask coverage; explicit light rules
-remain authoritative. Seven supplied mask files are bound to 27 sprites (including 17 UV-remapped headlight variants) (see
+mask. The active model's emitting sprites also create analytic lights when Minecraft reports
+zero luminance. Their energy scales with the emitting texels' mask strength, independent of unused
+UV space around a filament; a completely black mask remains dark. Each baked face samples only
+its own UV region, cached once at reload, so a dark/off region of a shared texture and particle-only
+sprites cannot borrow an on-state's emission. Explicit light rules remain authoritative. Seven supplied mask files are bound to 27 sprites (including 17 UV-remapped headlight variants) (see
 `reference/materials/emission-mask-mapping.json`). Existing LabPBR emission remains the default
 when no `_e` sidecar is provided. Animated
-masks follow sprite animation uploads.
+masks follow sprite animation uploads. `bits_n_bobs:block/lightbulb_on` receives a warm
+emission-only tint in sprite, atlas and animated emission uploads; its analytic lights use the
+matching warm colour. Diffuse artwork, mask coverage and other lamps are unaffected.
 
 Non-glass translucent atlas surfaces use alpha-blended opaque materials, preserving their
-paint and alpha without glass refraction. Glass models use a transmitting material with their
-original sprite as a diffuse layer. Streamed Create quads are split when the material changes,
-so a glass window and its opaque housing can share a contraption render buffer.
+paint and alpha without glass refraction. Their retained instances explicitly enable source-alpha
+blending; a material hint alone does not override disabled draw-call blending. Alpha-bearing
+sprites on an otherwise solid model layer retain cutout or fractional coverage. Binary-alpha
+surfaces use cutouts even when a mod requests a translucent host layer; fractional alpha uses
+stochastic alpha blending in visibility rays. Classification includes every animation frame and
+applies independently to Create's captured parts. All ten Create Deco ladder sprites in reference
+have binary alpha. Runtime defaults explicitly enable alpha-blended shadows and emissive-triangle
+NEE exploration; see [RTX Remix options](https://github.com/NVIDIAGameWorks/dxvk-remix/blob/main/RtxOptions.md).
+Glass is classified per sprite, using glass classes/tags and glass/window atlas identifiers
+(including untagged Railways/Create Deco and connected variants): opaque frame/particle sprites borrowed by a window cannot turn
+ordinary planks into a dielectric. Each glass surface has a transmitting base and a separate
+alpha decal carrying the original texture, UVs and vertex colours. Terrain uses static decals;
+held items and Create/Sable captures use dynamic decals following the same rigid transform.
+Opaque paint and fully invisible RGB do not tint the dielectric's transmission. Streamed Create
+quads split at material changes so glass and its opaque housing can share a capture buffer.
 
 Fluid variants use recoloured vanilla water animation and the water normal flipbook. Aeronautics
 and Enchantment Industry types use vanilla lava animation and matching generated lava normals;

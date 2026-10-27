@@ -33,12 +33,6 @@ public final class SodiumSectionCapture {
     private ChunkSectionPos section;
     private BlockDataQueue.CaptureToken token;
     private boolean active;
-    private boolean clearGlass;
-    private static final net.minecraft.util.Identifier GLASS =
-            net.minecraft.util.Identifier.ofVanilla("block/glass");
-    private static final net.minecraft.util.Identifier GLASS_PANE_TOP =
-            net.minecraft.util.Identifier.ofVanilla("block/glass_pane_top");
-
     public static SodiumSectionCapture current() {
         return LOCAL.get();
     }
@@ -61,7 +55,6 @@ public final class SodiumSectionCapture {
             return;
         var emitter = BlockQuadEmitter.threadLocal();
         emitter.flushRenderedBlock();
-        clearGlass = com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.glass(state);
         blockPos.set(x, y, z);
         emitter.processBlock(state, world, blockPos, state.isOpaqueFullCube(world, blockPos));
     }
@@ -96,8 +89,7 @@ public final class SodiumSectionCapture {
                 : material.pass.supportsFragmentDiscard() ? (material.mipped ? "cutout_mipped" : "cutout")
                                                           : "solid";
         var spriteId = sprite == null ? null : sprite.getContents().getId();
-        if (clearGlass || GLASS.equals(spriteId) || GLASS_PANE_TOP.equals(spriteId)
-                || com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.get().isGlassSprite(spriteId))
+        if (com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.get().isGlassSprite(spriteId))
             layer = "glass";
         BlockQuadEmitter.threadLocal().stageRenderedQuad(
                 positions, uvs, colors, nx / length, ny / length, nz / length, sprite, layer);

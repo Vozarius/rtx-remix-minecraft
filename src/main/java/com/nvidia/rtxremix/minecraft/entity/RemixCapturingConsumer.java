@@ -1018,7 +1018,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         }
 
         int materialLayer = EntityRenderContext.get().getBlockItemLayer();
-        if (materialLayer == EntityRenderContext.NO_BLOCK_ITEM
+        if (materialLayer < BlockTextureManager.LAYER_COUNT
                 && BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)) {
             BlockTextureManager textures = BlockTextureManager.get();
             if (textures != null && textures.isInitialized()) {
@@ -1026,8 +1026,12 @@ public class RemixCapturingConsumer implements VertexConsumer {
                         textures.spriteAt((tu[start] + tu[start + 1] + tu[start + 2] + tu[start + 3]) * 0.25f,
                                 (tv[start] + tv[start + 1] + tv[start + 2] + tv[start + 3]) * 0.25f);
                 if (sprite != null) {
-                    if (sprite.hasTransparency)
+                    if (sprite.hasPartialTransparency)
                         materialLayer = BlockTextureManager.L_TRANS;
+                    else if (sprite.hasTransparency)
+                        materialLayer = BlockTextureManager.L_CUTOUT;
+                    else if (materialLayer == BlockTextureManager.L_GLASS)
+                        materialLayer = BlockTextureManager.L_SOLID;
                     if (com.nvidia.rtxremix.minecraft.texture.BlockMaterialCatalog.get().isGlassSprite(
                                 sprite.id))
                         materialLayer = BlockTextureManager.L_GLASS;

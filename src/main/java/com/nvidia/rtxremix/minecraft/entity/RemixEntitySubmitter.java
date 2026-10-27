@@ -943,11 +943,13 @@ public class RemixEntitySubmitter {
         if (blockItemLayer == BlockTextureManager.L_GLASS) {
             return RenderLayerUtils.SurfaceMode.GLASS;
         }
-        if (surfaceMode != RenderLayerUtils.SurfaceMode.TRANSLUCENT
-                || blockItemLayer == BlockTextureManager.L_TRANS) {
-            return surfaceMode;
-        }
-        return RenderLayerUtils.SurfaceMode.CUTOUT;
+        if (blockItemLayer == BlockTextureManager.L_TRANS)
+            return RenderLayerUtils.SurfaceMode.TRANSLUCENT;
+        if (blockItemLayer == BlockTextureManager.L_CUTOUT
+                || blockItemLayer == BlockTextureManager.L_CUTOUT_MIPPED)
+            return RenderLayerUtils.SurfaceMode.CUTOUT;
+        return surfaceMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT
+                ? RenderLayerUtils.SurfaceMode.CUTOUT : surfaceMode;
     }
 
     /**
@@ -1242,6 +1244,11 @@ public class RemixEntitySubmitter {
                         role,
                         beacon != null),
                 worldTransform);
+        if (surfaceMode == RenderLayerUtils.SurfaceMode.GLASS) {
+            submitRigidPart(result, consumer, partIndex, texId, RenderLayerUtils.SurfaceMode.TRANSLUCENT,
+                    topology, transientGeometry, layerIndex, shellLayer, role, worldTransform,
+                    categoryFlags | InstanceCategoryBit.DECAL_DYNAMIC);
+        }
     }
 
     private static CopperBeaconBlockEntity placedBeaconLens(Object owner, Sprite sprite) {
